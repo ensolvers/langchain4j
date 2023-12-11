@@ -69,8 +69,19 @@
                     </execution>
                 </executions>
             </plugin>
+
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <version>2.5.5</version>
+                <configuration>
+                    <skip>true</skip>
+                </configuration>
+            </plugin>
+
         </plugins>
     </build>
+
 
     <licenses>
         <license>
@@ -79,5 +90,6 @@
             <distribution>repo</distribution>
         </license>
     </licenses>
+
 
 </project>
