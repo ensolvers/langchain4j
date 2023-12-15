@@ -3,16 +3,22 @@ package dev.langchain4j.model.azure;
 import com.azure.ai.openai.OpenAIClient;
 import com.azure.ai.openai.models.ChatCompletions;
 import com.azure.ai.openai.models.ChatCompletionsOptions;
+import com.azure.ai.openai.models.ChatRole;
 import com.azure.ai.openai.models.FunctionCallConfig;
 import com.azure.core.http.ProxyOptions;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.TextNode;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
+import dev.langchain4j.internal.Json;
 import dev.langchain4j.model.Tokenizer;
 import dev.langchain4j.model.chat.ChatLanguageModel;
 import dev.langchain4j.model.chat.TokenCountEstimator;
 import dev.langchain4j.model.openai.OpenAiTokenizer;
 import dev.langchain4j.model.output.Response;
+import dev.langchain4j.model.output.TokenUsage;
 
 import java.time.Duration;
 import java.util.List;
@@ -135,6 +141,33 @@ public class AzureOpenAiChatModel implements ChatLanguageModel, TokenCountEstima
         }
         if (toolThatMustBeExecuted != null) {
             options.setFunctionCall(new FunctionCallConfig(toolThatMustBeExecuted.name()));
+        }
+
+        // We take the last message, and check if it is a @ToolResponse, if it is, we then check for the returnDirectly flag
+        com.azure.ai.openai.models.ChatMessage lastMessage = options.getMessages().get(options.getMessages().size() - 1);
+
+        try {
+            ObjectMapper mapper = new ObjectMapper();
+            JsonNode jsonObject = mapper.valueToTree(lastMessage);
+
+            TextNode textNode = (TextNode) jsonObject.get("content");
+            // We should probably import @ToolResponse from lazo or define it here, it will be cleaner
+            JsonNode finalJson = mapper.readTree(textNode.textValue());
+            boolean returnDirectly = finalJson.get("returnDirectly").asBoolean();
+
+            if (returnDirectly) {
+                String directResponse = finalJson.get("lazoResponse").asText();
+                System.out.println("response: " + directResponse);
+                com.azure.ai.openai.models.ChatMessage chatMessage = new com.azure.ai.openai.models.ChatMessage(ChatRole.ASSISTANT, directResponse);
+
+                return Response.from(
+                        aiMessageFrom(chatMessage),
+                        new TokenUsage(0, 0, 0));
+            }
+        } catch (Exception e) {
+            // @ToolResponse are being returned only from tools, if langchain decides to answer without making use of a tool,
+            // then the parsing above will fail, and we will return the bot response as usual
+            System.out.println("Exception: " + e);
         }
 
         ChatCompletions chatCompletions = client.getChatCompletions(deploymentName, options);

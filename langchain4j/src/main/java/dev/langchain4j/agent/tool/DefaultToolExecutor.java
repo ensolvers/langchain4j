@@ -27,6 +27,7 @@ public class DefaultToolExecutor implements ToolExecutor {
 
     public String execute(ToolExecutionRequest toolExecutionRequest, Object memoryId) {
         log.debug("About to execute {} for memoryId {}", toolExecutionRequest, memoryId);
+        System.out.println("About to execute {} for memoryId {}" + toolExecutionRequest + memoryId);
 
         // TODO ensure this method never throws exceptions
 
