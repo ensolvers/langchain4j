@@ -154,7 +154,7 @@ public class AzureOpenAiStreamingChatModel implements StreamingChatLanguageModel
                 AzureOpenAiStreamingResponseBuilder responseBuilder = new AzureOpenAiStreamingResponseBuilder(inputTokenCount);
                 ObjectMapper objectMapper = new ObjectMapper();
 
-                String contentChatCompletionString = "{\"id\": \"some_id\", \"created\": "+ Instant.now().getEpochSecond() +", \"choices\": [ {\"index\": 1, \"finish_reason\": \"stop\", \"delta\": {\"role\": \"assistant\", \"content\": \"" + "```json { \\\"type\\\": \\\"STRING\\\", \\\"content\\\": \\\"" + directResponse + "\\\" }```"
+                String contentChatCompletionString = "{\"id\": \"some_id\", \"created\": "+ Instant.now().getEpochSecond() +", \"choices\": [ {\"index\": 1, \"finish_reason\": \"stop\", \"delta\": {\"role\": \"assistant\", \"content\": \"" + "{ \\\"type\\\": \\\"STRING\\\", \\\"content\\\": \\\"" + directResponse + "\\\" }"
                         + "\", \"name\": \"some_name\"}}], \"usage\": {\"completion_tokens\": 0, \"prompt_tokens\": 0, \"total_tokens\": 0}}";
                 ChatCompletions contentChatCompletion = objectMapper.readValue(contentChatCompletionString, ChatCompletions.class);
                 responseBuilder.append(contentChatCompletion);
