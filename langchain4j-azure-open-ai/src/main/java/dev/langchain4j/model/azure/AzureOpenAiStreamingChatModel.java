@@ -152,23 +152,22 @@ public class AzureOpenAiStreamingChatModel implements StreamingChatLanguageModel
 
                 Integer inputTokenCount = tokenizer == null ? null : tokenizer.estimateTokenCountInMessages(messages);
                 AzureOpenAiStreamingResponseBuilder responseBuilder = new AzureOpenAiStreamingResponseBuilder(inputTokenCount);
-
-                long epochSeconds = Instant.now().getEpochSecond();
-                String chatCompletionsJson = "{\"id\": \"some_id\", \"created\": "+ epochSeconds +", \"choices\": [ {\"index\": 1, \"finish_reason\": \"stop\", \"delta\": {\"role\": \"assistant\", \"content\": \"" + directResponse + "\", \"name\": \"some_name\"}}], \"usage\": {\"completion_tokens\": 0, \"prompt_tokens\": 0, \"total_tokens\": 0}}";
                 ObjectMapper objectMapper = new ObjectMapper();
 
-                ChatCompletions chatCompletions = objectMapper.readValue(chatCompletionsJson, ChatCompletions.class);
+                String contentChatCompletionString = "{\"id\": \"some_id\", \"created\": "+ Instant.now().getEpochSecond() +", \"choices\": [ {\"index\": 1, \"finish_reason\": \"stop\", \"delta\": {\"role\": \"assistant\", \"content\": \"" + "```json { \\\"type\\\": \\\"STRING\\\", \\\"content\\\": \\\"" + directResponse + "\\\" }```"
+                        + "\", \"name\": \"some_name\"}}], \"usage\": {\"completion_tokens\": 0, \"prompt_tokens\": 0, \"total_tokens\": 0}}";
+                ChatCompletions contentChatCompletion = objectMapper.readValue(contentChatCompletionString, ChatCompletions.class);
+                responseBuilder.append(contentChatCompletion);
+                handle(contentChatCompletion, handler);
 
-                responseBuilder.append(chatCompletions);
                 Response<AiMessage> response = responseBuilder.build(tokenizer, false);
-                handle(chatCompletions, handler);
                 handler.onComplete(response);
                 return;
             }
         } catch (Exception e) {
             // @ToolResponse are being returned only from tools, if langchain decides to answer without making use of a tool,
             // then the parsing above will fail, and we will return the bot response as usual
-            System.out.println("Exception: " + e);
+            System.out.println("Response was not flagged as returnDirectly, or it was flagged and something failed while parsing" + e); // We should have different log levels for both cases, this current log is not helping
         }
 
         Integer inputTokenCount = tokenizer == null ? null : tokenizer.estimateTokenCountInMessages(messages);
