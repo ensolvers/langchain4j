@@ -95,14 +95,13 @@
     <build>
         <plugins>
             <plugin>
-                <groupId>org.honton.chas</groupId>
-                <artifactId>license-maven-plugin</artifactId>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <version>2.5.5</version>
                 <configuration>
-                    <!-- the pinecone module has non-permissive licenses -->
-                    <skipCompliance>true</skipCompliance>
+                    <skip>true</skip>
                 </configuration>
             </plugin>
         </plugins>
     </build>
-
 </project>

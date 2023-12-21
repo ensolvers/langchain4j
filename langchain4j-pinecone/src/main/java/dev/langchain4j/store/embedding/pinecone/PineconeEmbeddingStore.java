@@ -2,6 +2,7 @@ package dev.langchain4j.store.embedding.pinecone;
 
 import com.google.protobuf.Struct;
 import com.google.protobuf.Value;
+import dev.langchain4j.data.document.Metadata;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.store.embedding.CosineSimilarity;
@@ -17,6 +18,8 @@ import io.pinecone.proto.*;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 import static dev.langchain4j.internal.Utils.randomUUID;
 import static java.util.Collections.emptyList;
@@ -148,23 +151,15 @@ public class PineconeEmbeddingStore implements EmbeddingStore<TextSegment> {
     @Override
     public List<EmbeddingMatch<TextSegment>> findRelevant(Embedding referenceEmbedding, int maxResults, double minScore) {
 
-        QueryVector queryVector = QueryVector
-                .newBuilder()
-                .addAllValues(referenceEmbedding.vectorAsList())
-                .setTopK(maxResults)
-                .setNamespace(nameSpace)
-                .build();
-
         QueryRequest queryRequest = QueryRequest
                 .newBuilder()
-                .addQueries(queryVector)
+                .addAllVector(referenceEmbedding.vectorAsList())
+                .setNamespace(nameSpace)
                 .setTopK(maxResults)
                 .build();
 
         List<String> matchedVectorIds = connection.getBlockingStub()
                 .query(queryRequest)
-                .getResultsList()
-                .get(0)
                 .getMatchesList()
                 .stream()
                 .map(ScoredVector::getId)
@@ -193,9 +188,11 @@ public class PineconeEmbeddingStore implements EmbeddingStore<TextSegment> {
     }
 
     private EmbeddingMatch<TextSegment> toEmbeddingMatch(Vector vector, Embedding referenceEmbedding) {
-        Value textSegmentValue = vector.getMetadata()
-                .getFieldsMap()
-                .get(metadataTextKey);
+        Map<String, Value> fieldsMap = vector.getMetadata().getFieldsMap();
+        Map<String, String> metadata = fieldsMap.keySet().stream().collect(Collectors.toMap(
+                (k) -> k,
+                (k) -> fieldsMap.get(k).getStringValue()
+        ));
 
         Embedding embedding = Embedding.from(vector.getValuesList());
         double cosineSimilarity = CosineSimilarity.between(embedding, referenceEmbedding);
@@ -204,7 +201,7 @@ public class PineconeEmbeddingStore implements EmbeddingStore<TextSegment> {
                 RelevanceScore.fromCosineSimilarity(cosineSimilarity),
                 vector.getId(),
                 embedding,
-                textSegmentValue == null ? null : TextSegment.from(textSegmentValue.getStringValue())
+                metadata.get(metadataTextKey) == null ? null : TextSegment.from(metadata.get(metadataTextKey), new Metadata(metadata))
         );
     }
 
