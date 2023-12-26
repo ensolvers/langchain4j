@@ -14,6 +14,7 @@ import dev.langchain4j.model.Tokenizer;
 import dev.langchain4j.model.chat.StreamingChatLanguageModel;
 import dev.langchain4j.model.chat.TokenCountEstimator;
 import dev.langchain4j.model.openai.OpenAiTokenizer;
+import dev.langchain4j.model.output.FinishReason;
 import dev.langchain4j.model.output.Response;
 import dev.langchain4j.model.output.TokenUsage;
 
@@ -148,26 +149,29 @@ public class AzureOpenAiStreamingChatModel implements StreamingChatLanguageModel
             boolean returnDirectly = finalJson.get("returnDirectly").asBoolean();
 
             if (returnDirectly) {
-                String directResponse = finalJson.get("lazoResponse").asText();
+                try {
+                    String directResponse = finalJson.get("lazoResponse").toString();
 
-                Integer inputTokenCount = tokenizer == null ? null : tokenizer.estimateTokenCountInMessages(messages);
-                AzureOpenAiStreamingResponseBuilder responseBuilder = new AzureOpenAiStreamingResponseBuilder(inputTokenCount);
-                ObjectMapper objectMapper = new ObjectMapper();
+                    System.out.println("Response was flagged as returnDirectly, returning the response directly: " + directResponse);
 
-                String contentChatCompletionString = "{\"id\": \"some_id\", \"created\": "+ Instant.now().getEpochSecond() +", \"choices\": [ {\"index\": 1, \"finish_reason\": \"stop\", \"delta\": {\"role\": \"assistant\", \"content\": \"" + "{ \\\"type\\\": \\\"STRING\\\", \\\"content\\\": \\\"" + directResponse + "\\\" }"
-                        + "\", \"name\": \"some_name\"}}], \"usage\": {\"completion_tokens\": 0, \"prompt_tokens\": 0, \"total_tokens\": 0}}";
-                ChatCompletions contentChatCompletion = objectMapper.readValue(contentChatCompletionString, ChatCompletions.class);
-                responseBuilder.append(contentChatCompletion);
-                handle(contentChatCompletion, handler);
+                    com.azure.ai.openai.models.ChatMessage chatMessage = new com.azure.ai.openai.models.ChatMessage(ChatRole.ASSISTANT, directResponse);
+                    handler.onNext(directResponse);
 
-                Response<AiMessage> response = responseBuilder.build(tokenizer, false);
-                handler.onComplete(response);
-                return;
+                    Response<AiMessage> response = Response.from(
+                            aiMessageFrom(chatMessage),
+                            new TokenUsage(0, 0, 0),
+                            FinishReason.STOP);
+
+                    handler.onComplete(response);
+                    return;
+                } catch (Exception e) {
+                    System.out.println("Response was flagged as returnDirectly, but something failed while parsing" + e);
+                }
             }
         } catch (Exception e) {
             // @ToolResponse are being returned only from tools, if langchain decides to answer without making use of a tool,
             // then the parsing above will fail, and we will return the bot response as usual
-            System.out.println("Response was not flagged as returnDirectly, or it was flagged and something failed while parsing" + e); // We should have different log levels for both cases, this current log is not helping
+            System.out.println("Response was not flagged as returnDirectly");
         }
 
         Integer inputTokenCount = tokenizer == null ? null : tokenizer.estimateTokenCountInMessages(messages);
