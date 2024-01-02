@@ -94,6 +94,12 @@ public class PineconeEmbeddingStore implements EmbeddingStore<TextSegment> {
     }
 
     @Override
+    public String addWithMetaData(String id, Embedding embedding, TextSegment textSegment) {
+        addInternal(id, embedding, textSegment);
+        return id;
+    }
+
+    @Override
     public List<String> addAll(List<Embedding> embeddings) {
 
         List<String> ids = embeddings.stream()

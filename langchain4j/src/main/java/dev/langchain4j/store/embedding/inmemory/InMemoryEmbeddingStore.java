@@ -81,6 +81,11 @@ public class InMemoryEmbeddingStore<Embedded> implements EmbeddingStore<Embedded
     }
 
     @Override
+    public String addWithMetaData(String id, Embedding embedding, TextSegment textSegment) {
+        return null;
+    }
+
+    @Override
     public String add(Embedding embedding, Embedded embedded) {
         String id = randomUUID();
         add(id, embedding, embedded);

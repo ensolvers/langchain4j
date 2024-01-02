@@ -1,6 +1,7 @@
 package dev.langchain4j.store.embedding;
 
 import dev.langchain4j.data.embedding.Embedding;
+import dev.langchain4j.data.segment.TextSegment;
 
 import java.util.List;
 
@@ -18,6 +19,8 @@ public interface EmbeddingStore<Embedded> {
      * @return The auto-generated ID associated with the added embedding.
      */
     String add(Embedding embedding);
+
+    String addWithMetaData(String id, Embedding embedding, TextSegment textSegment);
 
     /**
      * Adds a given embedding to the store.
