@@ -7,7 +7,9 @@ import dev.langchain4j.model.StreamingResponseHandler;
 import dev.langchain4j.model.Tokenizer;
 import dev.langchain4j.model.language.StreamingLanguageModel;
 import dev.langchain4j.model.language.TokenCountEstimator;
+import dev.langchain4j.model.openai.spi.OpenAiStreamingLanguageModelBuilderFactory;
 import dev.langchain4j.model.output.Response;
+import dev.langchain4j.spi.ServiceHelper;
 import lombok.Builder;
 
 import java.net.Proxy;
@@ -34,6 +36,7 @@ public class OpenAiStreamingLanguageModel implements StreamingLanguageModel, Tok
     @Builder
     public OpenAiStreamingLanguageModel(String baseUrl,
                                         String apiKey,
+                                        String organizationId,
                                         String modelName,
                                         Double temperature,
                                         Duration timeout,
@@ -47,6 +50,7 @@ public class OpenAiStreamingLanguageModel implements StreamingLanguageModel, Tok
         this.client = OpenAiClient.builder()
                 .baseUrl(getOrDefault(baseUrl, OPENAI_URL))
                 .openAiApiKey(apiKey)
+                .organizationId(organizationId)
                 .callTimeout(timeout)
                 .connectTimeout(timeout)
                 .readTimeout(timeout)
@@ -99,5 +103,30 @@ public class OpenAiStreamingLanguageModel implements StreamingLanguageModel, Tok
 
     public static OpenAiStreamingLanguageModel withApiKey(String apiKey) {
         return builder().apiKey(apiKey).build();
+    }
+
+    public static OpenAiStreamingLanguageModelBuilder builder() {
+        return ServiceHelper.loadFactoryService(
+                OpenAiStreamingLanguageModelBuilderFactory.class,
+                OpenAiStreamingLanguageModelBuilder::new
+        );
+    }
+
+    public static class OpenAiStreamingLanguageModelBuilder {
+
+        public OpenAiStreamingLanguageModelBuilder() {
+            // This is public so it can be extended
+            // By default with Lombok it becomes package private
+        }
+
+        public OpenAiStreamingLanguageModelBuilder modelName(String modelName) {
+            this.modelName = modelName;
+            return this;
+        }
+
+        public OpenAiStreamingLanguageModelBuilder modelName(OpenAiLanguageModelName modelName) {
+            this.modelName = modelName.toString();
+            return this;
+        }
     }
 }

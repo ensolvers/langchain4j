@@ -8,10 +8,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeoutException;
 
-import static dev.langchain4j.model.output.FinishReason.STOP;
+import static dev.langchain4j.model.output.FinishReason.LENGTH;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -23,17 +21,17 @@ class AzureOpenAiStreamingLanguageModelIT {
             .endpoint(System.getenv("AZURE_OPENAI_ENDPOINT"))
             .serviceVersion(System.getenv("AZURE_OPENAI_SERVICE_VERSION"))
             .apiKey(System.getenv("AZURE_OPENAI_KEY"))
-            .deploymentName(System.getenv("AZURE_OPENAI_DEPLOYMENT_NAME"))
+            .deploymentName("davinci-002")
             .logRequestsAndResponses(true)
             .build();
 
     @Test
-    void should_stream_answer() throws ExecutionException, InterruptedException, TimeoutException {
+    void should_stream_answer() throws Exception {
 
         CompletableFuture<String> futureAnswer = new CompletableFuture<>();
         CompletableFuture<Response<String>> futureResponse = new CompletableFuture<>();
 
-        model.generate("What is the capital of France?", new StreamingResponseHandler<String>() {
+        model.generate("The capital of France is: ", new StreamingResponseHandler<String>() {
 
             private final StringBuilder answerBuilder = new StringBuilder();
 
@@ -60,13 +58,13 @@ class AzureOpenAiStreamingLanguageModelIT {
         String answer = futureAnswer.get(30, SECONDS);
         Response<String> response = futureResponse.get(30, SECONDS);
 
-        assertThat(answer).contains("Paris");
+        assertThat(answer).containsIgnoringCase("Paris");
         assertThat(response.content()).isEqualTo(answer);
 
         assertThat(response.tokenUsage().inputTokenCount()).isEqualTo(7);
         assertThat(response.tokenUsage().outputTokenCount()).isGreaterThan(1);
         assertThat(response.tokenUsage().totalTokenCount()).isGreaterThan(8);
 
-        assertThat(response.finishReason()).isEqualTo(STOP);
+        assertThat(response.finishReason()).isEqualTo(LENGTH);
     }
 }

@@ -2,6 +2,12 @@ package dev.langchain4j.model.azure;
 
 import com.azure.ai.openai.OpenAIClient;
 import com.azure.ai.openai.models.*;
+import com.azure.ai.openai.models.ChatChoice;
+import com.azure.ai.openai.models.ChatCompletions;
+import com.azure.ai.openai.models.ChatCompletionsOptions;
+import com.azure.ai.openai.models.FunctionCallConfig;
+import com.azure.core.credential.KeyCredential;
+import com.azure.core.credential.TokenCredential;
 import com.azure.core.http.ProxyOptions;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -11,12 +17,14 @@ import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.model.StreamingResponseHandler;
 import dev.langchain4j.model.Tokenizer;
+import dev.langchain4j.model.azure.spi.AzureOpenAiStreamingChatModelBuilderFactory;
 import dev.langchain4j.model.chat.StreamingChatLanguageModel;
 import dev.langchain4j.model.chat.TokenCountEstimator;
 import dev.langchain4j.model.openai.OpenAiTokenizer;
 import dev.langchain4j.model.output.FinishReason;
 import dev.langchain4j.model.output.Response;
 import dev.langchain4j.model.output.TokenUsage;
+import dev.langchain4j.spi.ServiceHelper;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -24,6 +32,7 @@ import java.time.OffsetDateTime;
 import java.util.List;
 
 import static dev.langchain4j.internal.Utils.getOrDefault;
+import static dev.langchain4j.internal.Utils.isNullOrEmpty;
 import static dev.langchain4j.model.azure.AzureOpenAiModelName.GPT_3_5_TURBO;
 import static dev.langchain4j.model.azure.InternalAzureOpenAiHelper.*;
 import static java.util.Collections.singletonList;
@@ -32,21 +41,26 @@ import static java.util.Collections.singletonList;
  * Represents an OpenAI language model, hosted on Azure, that has a chat completion interface, such as gpt-3.5-turbo.
  * The model's response is streamed token by token and should be handled with {@link StreamingResponseHandler}.
  * <p>
- * Mandatory parameters for initialization are: endpoint, serviceVersion, apiKey and deploymentName.
+ * Mandatory parameters for initialization are: endpoint, serviceVersion, apikey (or an alternate authentication method, see below for more information) and deploymentName.
  * You can also provide your own OpenAIClient instance, if you need more flexibility.
  * <p>
- * There are two primary authentication methods to access Azure OpenAI:
+ * There are 3 authentication methods:
  * <p>
- * 1. API Key Authentication: For this type of authentication, HTTP requests must include the
- * API Key in the "api-key" HTTP header as follows: `api-key: OPENAI_API_KEY`
+ * 1. Azure OpenAI API Key Authentication: this is the most common method, using an Azure OpenAI API key.
+ * You need to provide the OpenAI API Key as a parameter, using the apiKey() method in the Builder, or the apiKey parameter in the constructor:
+ * For example, you would use `builder.apiKey("{key}")`.
  * <p>
- * 2. Azure Active Directory Authentication: For this type of authentication, HTTP requests must include the
- * authentication/access token in the "Authorization" HTTP header.
+ * 2. non-Azure OpenAI API Key Authentication: this method allows to use the OpenAI service, instead of Azure OpenAI.
+ * You can use the nonAzureApiKey() method in the Builder, which will also automatically set the endpoint to "https://api.openai.com/v1".
+ * For example, you would use `builder.nonAzureApiKey("{key}")`.
+ * The constructor requires a KeyCredential instance, which can be created using `new AzureKeyCredential("{key}")`, and doesn't set up the endpoint.
  * <p>
- * <a href="https://learn.microsoft.com/en-us/azure/ai-services/openai/reference">More information</a>
- * <p>
- * Please note, that currently, only API Key authentication is supported by this class,
- * second authentication option will be supported later.
+ * 3. Azure OpenAI client with Microsoft Entra ID (formerly Azure Active Directory) credentials.
+ * - This requires to add the `com.azure:azure-identity` dependency to your project, which is an optional dependency to this library.
+ * - You need to provide a TokenCredential instance, using the tokenCredential() method in the Builder, or the tokenCredential parameter in the constructor.
+ * As an example, DefaultAzureCredential can be used to authenticate the client: Set the values of the client ID, tenant ID, and
+ * client secret of the AAD application as environment variables: AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_CLIENT_SECRET.
+ * Then, provide the DefaultAzureCredential instance to the builder: `builder.tokenCredential(new DefaultAzureCredentialBuilder().build())`.
  */
 public class AzureOpenAiStreamingChatModel implements StreamingChatLanguageModel, TokenCountEstimator {
 
@@ -56,6 +70,7 @@ public class AzureOpenAiStreamingChatModel implements StreamingChatLanguageModel
     private final Double temperature;
     private final Double topP;
     private final Integer maxTokens;
+    private final List<String> stop;
     private final Double presencePenalty;
     private final Double frequencyPenalty;
 
@@ -65,10 +80,11 @@ public class AzureOpenAiStreamingChatModel implements StreamingChatLanguageModel
                                          Double temperature,
                                          Double topP,
                                          Integer maxTokens,
+                                         List<String> stop,
                                          Double presencePenalty,
                                          Double frequencyPenalty) {
 
-        this(deploymentName, tokenizer, temperature, topP, maxTokens, presencePenalty, frequencyPenalty);
+        this(deploymentName, tokenizer, temperature, topP, maxTokens, stop, presencePenalty, frequencyPenalty);
         this.client = client;
     }
 
@@ -80,6 +96,7 @@ public class AzureOpenAiStreamingChatModel implements StreamingChatLanguageModel
                                          Double temperature,
                                          Double topP,
                                          Integer maxTokens,
+                                         List<String> stop,
                                          Double presencePenalty,
                                          Double frequencyPenalty,
                                          Duration timeout,
@@ -87,8 +104,48 @@ public class AzureOpenAiStreamingChatModel implements StreamingChatLanguageModel
                                          ProxyOptions proxyOptions,
                                          boolean logRequestsAndResponses) {
 
-        this(deploymentName, tokenizer, temperature, topP, maxTokens, presencePenalty, frequencyPenalty);
+        this(deploymentName, tokenizer, temperature, topP, maxTokens, stop, presencePenalty, frequencyPenalty);
         this.client = setupOpenAIClient(endpoint, serviceVersion, apiKey, timeout, maxRetries, proxyOptions, logRequestsAndResponses);
+    }
+
+    public AzureOpenAiStreamingChatModel(String endpoint,
+                                         String serviceVersion,
+                                         KeyCredential keyCredential,
+                                         String deploymentName,
+                                         Tokenizer tokenizer,
+                                         Double temperature,
+                                         Double topP,
+                                         Integer maxTokens,
+                                         List<String> stop,
+                                         Double presencePenalty,
+                                         Double frequencyPenalty,
+                                         Duration timeout,
+                                         Integer maxRetries,
+                                         ProxyOptions proxyOptions,
+                                         boolean logRequestsAndResponses) {
+
+        this(deploymentName, tokenizer, temperature, topP, maxTokens, stop, presencePenalty, frequencyPenalty);
+        this.client = setupOpenAIClient(endpoint, serviceVersion, keyCredential, timeout, maxRetries, proxyOptions, logRequestsAndResponses);
+    }
+
+    public AzureOpenAiStreamingChatModel(String endpoint,
+                                         String serviceVersion,
+                                         TokenCredential tokenCredential,
+                                         String deploymentName,
+                                         Tokenizer tokenizer,
+                                         Double temperature,
+                                         Double topP,
+                                         Integer maxTokens,
+                                         List<String> stop,
+                                         Double presencePenalty,
+                                         Double frequencyPenalty,
+                                         Duration timeout,
+                                         Integer maxRetries,
+                                         ProxyOptions proxyOptions,
+                                         boolean logRequestsAndResponses) {
+
+        this(deploymentName, tokenizer, temperature, topP, maxTokens, stop, presencePenalty, frequencyPenalty);
+        this.client = setupOpenAIClient(endpoint, serviceVersion, tokenCredential, timeout, maxRetries, proxyOptions, logRequestsAndResponses);
     }
 
     private AzureOpenAiStreamingChatModel(String deploymentName,
@@ -96,14 +153,16 @@ public class AzureOpenAiStreamingChatModel implements StreamingChatLanguageModel
                                          Double temperature,
                                          Double topP,
                                          Integer maxTokens,
+                                          List<String> stop,
                                          Double presencePenalty,
                                          Double frequencyPenalty) {
 
-        this.deploymentName = getOrDefault(deploymentName, "gpt-35-turbo-0613");
+        this.deploymentName = getOrDefault(deploymentName, "gpt-35-turbo");
         this.tokenizer = getOrDefault(tokenizer, new OpenAiTokenizer(GPT_3_5_TURBO));
         this.temperature = getOrDefault(temperature, 0.7);
         this.topP = topP;
         this.maxTokens = maxTokens;
+        this.stop = stop;
         this.presencePenalty = presencePenalty;
         this.frequencyPenalty = frequencyPenalty;
     }
@@ -120,7 +179,7 @@ public class AzureOpenAiStreamingChatModel implements StreamingChatLanguageModel
 
     @Override
     public void generate(List<ChatMessage> messages, ToolSpecification toolSpecification, StreamingResponseHandler<AiMessage> handler) {
-        generate(messages, singletonList(toolSpecification), toolSpecification, handler);
+        generate(messages, null, toolSpecification, handler);
     }
 
     private void generate(List<ChatMessage> messages,
@@ -134,10 +193,11 @@ public class AzureOpenAiStreamingChatModel implements StreamingChatLanguageModel
                 .setTemperature(temperature)
                 .setTopP(topP)
                 .setMaxTokens(maxTokens)
+                .setStop(stop)
                 .setPresencePenalty(presencePenalty)
                 .setFrequencyPenalty(frequencyPenalty);
         // We take the last message, and check if it is a @ToolResponse, if it is, we then check for the returnDirectly flag
-        com.azure.ai.openai.models.ChatMessage lastMessage = options.getMessages().get(options.getMessages().size() - 1);
+        com.azure.ai.openai.models.ChatRequestMessage lastMessage = options.getMessages().get(options.getMessages().size() - 1);
 
         try {
             ObjectMapper mapper = new ObjectMapper();
@@ -154,11 +214,10 @@ public class AzureOpenAiStreamingChatModel implements StreamingChatLanguageModel
 
                     System.out.println("Response was flagged as returnDirectly, returning the response directly: " + directResponse);
 
-                    com.azure.ai.openai.models.ChatMessage chatMessage = new com.azure.ai.openai.models.ChatMessage(ChatRole.ASSISTANT, directResponse);
                     handler.onNext(directResponse);
 
                     Response<AiMessage> response = Response.from(
-                            aiMessageFrom(chatMessage),
+                            AiMessage.from(directResponse),
                             new TokenUsage(0, 0, 0),
                             FinishReason.STOP);
 
@@ -176,16 +235,16 @@ public class AzureOpenAiStreamingChatModel implements StreamingChatLanguageModel
 
         Integer inputTokenCount = tokenizer == null ? null : tokenizer.estimateTokenCountInMessages(messages);
 
-        if (toolSpecifications != null && !toolSpecifications.isEmpty()) {
+        if (toolThatMustBeExecuted != null) {
+            options.setFunctions(toFunctions(singletonList(toolThatMustBeExecuted)));
+            options.setFunctionCall(new FunctionCallConfig(toolThatMustBeExecuted.name()));
+            if (tokenizer != null) {
+                inputTokenCount += tokenizer.estimateTokenCountInForcefulToolSpecification(toolThatMustBeExecuted);
+            }
+        } else if (!isNullOrEmpty(toolSpecifications)) {
             options.setFunctions(toFunctions(toolSpecifications));
             if (tokenizer != null) {
                 inputTokenCount += tokenizer.estimateTokenCountInToolSpecifications(toolSpecifications);
-            }
-        }
-        if (toolThatMustBeExecuted != null) {
-            options.setFunctionCall(new FunctionCallConfig(toolThatMustBeExecuted.name()));
-            if (tokenizer != null) {
-                inputTokenCount += tokenizer.estimateTokenCountInToolSpecification(toolThatMustBeExecuted);
             }
         }
 
@@ -212,7 +271,7 @@ public class AzureOpenAiStreamingChatModel implements StreamingChatLanguageModel
         if (choices == null || choices.isEmpty()) {
             return;
         }
-        com.azure.ai.openai.models.ChatMessage delta = choices.get(0).getDelta();
+        com.azure.ai.openai.models.ChatResponseMessage delta = choices.get(0).getDelta();
         String content = delta.getContent();
         if (content != null) {
             handler.onNext(content);
@@ -225,7 +284,10 @@ public class AzureOpenAiStreamingChatModel implements StreamingChatLanguageModel
     }
 
     public static Builder builder() {
-        return new Builder();
+        return ServiceHelper.loadFactoryService(
+                AzureOpenAiStreamingChatModelBuilderFactory.class,
+                Builder::new
+        );
     }
 
     public static class Builder {
@@ -233,11 +295,14 @@ public class AzureOpenAiStreamingChatModel implements StreamingChatLanguageModel
         private String endpoint;
         private String serviceVersion;
         private String apiKey;
+        private KeyCredential keyCredential;
+        private TokenCredential tokenCredential;
         private String deploymentName;
         private Tokenizer tokenizer;
         private Double temperature;
         private Double topP;
         private Integer maxTokens;
+        private List<String> stop;
         private Double presencePenalty;
         private Double frequencyPenalty;
         private Duration timeout;
@@ -269,13 +334,36 @@ public class AzureOpenAiStreamingChatModel implements StreamingChatLanguageModel
         }
 
         /**
-         * Sets the Azure OpenAI API key. This is a mandatory parameter.
+         * Sets the Azure OpenAI API key.
          *
          * @param apiKey The Azure OpenAI API key.
          * @return builder
          */
         public Builder apiKey(String apiKey) {
             this.apiKey = apiKey;
+            return this;
+        }
+
+        /**
+         * Used to authenticate with the OpenAI service, instead of Azure OpenAI.
+         * This automatically sets the endpoint to https://api.openai.com/v1.
+         *
+         * @param nonAzureApiKey The non-Azure OpenAI API key
+         * @return builder
+         */
+        public Builder nonAzureApiKey(String nonAzureApiKey) {
+            this.keyCredential = new KeyCredential(nonAzureApiKey);
+            this.endpoint = "https://api.openai.com/v1";
+            return this;
+        }
+
+        /**
+         * Used to authenticate to Azure OpenAI with Azure Active Directory credentials.
+         * @param tokenCredential the credentials to authenticate with Azure Active Directory
+         * @return builder
+         */
+        public Builder tokenCredential(TokenCredential tokenCredential) {
+            this.tokenCredential = tokenCredential;
             return this;
         }
 
@@ -307,6 +395,11 @@ public class AzureOpenAiStreamingChatModel implements StreamingChatLanguageModel
 
         public Builder maxTokens(Integer maxTokens) {
             this.maxTokens = maxTokens;
+            return this;
+        }
+
+        public Builder stop(List<String> stop) {
+            this.stop = stop;
             return this;
         }
 
@@ -353,6 +446,43 @@ public class AzureOpenAiStreamingChatModel implements StreamingChatLanguageModel
 
         public AzureOpenAiStreamingChatModel build() {
             if (openAIClient == null) {
+                if (tokenCredential != null) {
+                    return new AzureOpenAiStreamingChatModel(
+                            endpoint,
+                            serviceVersion,
+                            tokenCredential,
+                            deploymentName,
+                            tokenizer,
+                            temperature,
+                            topP,
+                            maxTokens,
+                            stop,
+                            presencePenalty,
+                            frequencyPenalty,
+                            timeout,
+                            maxRetries,
+                            proxyOptions,
+                            logRequestsAndResponses
+                    );
+                } else if (keyCredential != null) {
+                    return new AzureOpenAiStreamingChatModel(
+                            endpoint,
+                            serviceVersion,
+                            keyCredential,
+                            deploymentName,
+                            tokenizer,
+                            temperature,
+                            topP,
+                            maxTokens,
+                            stop,
+                            presencePenalty,
+                            frequencyPenalty,
+                            timeout,
+                            maxRetries,
+                            proxyOptions,
+                            logRequestsAndResponses
+                    );
+                }
                 return new AzureOpenAiStreamingChatModel(
                         endpoint,
                         serviceVersion,
@@ -362,6 +492,7 @@ public class AzureOpenAiStreamingChatModel implements StreamingChatLanguageModel
                         temperature,
                         topP,
                         maxTokens,
+                        stop,
                         presencePenalty,
                         frequencyPenalty,
                         timeout,
@@ -377,6 +508,7 @@ public class AzureOpenAiStreamingChatModel implements StreamingChatLanguageModel
                         temperature,
                         topP,
                         maxTokens,
+                        stop,
                         presencePenalty,
                         frequencyPenalty
                 );

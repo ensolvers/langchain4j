@@ -6,14 +6,14 @@ import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.StreamingResponseHandler;
 import dev.langchain4j.model.chat.StreamingChatLanguageModel;
+import dev.langchain4j.model.openai.OpenAiTokenizer;
 import dev.langchain4j.model.output.Response;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeoutException;
 
 import static dev.langchain4j.agent.tool.JsonSchemaProperty.INTEGER;
 import static dev.langchain4j.data.message.UserMessage.userMessage;
@@ -27,19 +27,24 @@ class AzureOpenAiStreamingChatModelIT {
 
     Logger logger = LoggerFactory.getLogger(AzureOpenAiStreamingChatModelIT.class);
 
-    StreamingChatLanguageModel model = AzureOpenAiStreamingChatModel.builder()
-            .endpoint(System.getenv("AZURE_OPENAI_ENDPOINT"))
-            .serviceVersion(System.getenv("AZURE_OPENAI_SERVICE_VERSION"))
-            .apiKey(System.getenv("AZURE_OPENAI_KEY"))
-            .deploymentName(System.getenv("AZURE_OPENAI_DEPLOYMENT_NAME"))
-            .logRequestsAndResponses(true)
-            .build();
-
-    @Test
-    void should_stream_answer() throws ExecutionException, InterruptedException, TimeoutException {
+    @ParameterizedTest(name = "Deployment name {0} using {1}")
+    @CsvSource({
+            "gpt-35-turbo, gpt-3.5-turbo",
+            "gpt-4,        gpt-4"
+    })
+    void should_stream_answer(String deploymentName, String gptVersion) throws Exception {
 
         CompletableFuture<String> futureAnswer = new CompletableFuture<>();
         CompletableFuture<Response<AiMessage>> futureResponse = new CompletableFuture<>();
+
+        StreamingChatLanguageModel model = AzureOpenAiStreamingChatModel.builder()
+                .endpoint(System.getenv("AZURE_OPENAI_ENDPOINT"))
+                .serviceVersion(System.getenv("AZURE_OPENAI_SERVICE_VERSION"))
+                .apiKey(System.getenv("AZURE_OPENAI_KEY"))
+                .deploymentName(deploymentName)
+                .tokenizer(new OpenAiTokenizer(gptVersion))
+                .logRequestsAndResponses(true)
+                .build();
 
         model.generate("What is the capital of France?", new StreamingResponseHandler<AiMessage>() {
 
@@ -79,8 +84,12 @@ class AzureOpenAiStreamingChatModelIT {
         assertThat(response.finishReason()).isEqualTo(STOP);
     }
 
-    @Test
-    void should_return_tool_execution_request() throws Exception {
+    @ParameterizedTest(name = "Deployment name {0} using {1}")
+    @CsvSource({
+            "gpt-35-turbo, gpt-3.5-turbo",
+            "gpt-4,        gpt-4"
+    })
+    void should_return_tool_execution_request(String deploymentName, String gptVersion) throws Exception {
 
         ToolSpecification toolSpecification = ToolSpecification.builder()
                 .name("calculator")
@@ -92,6 +101,15 @@ class AzureOpenAiStreamingChatModelIT {
         UserMessage userMessage = userMessage("Two plus two?");
 
         CompletableFuture<Response<AiMessage>> futureResponse = new CompletableFuture<>();
+
+        StreamingChatLanguageModel model = AzureOpenAiStreamingChatModel.builder()
+                .endpoint(System.getenv("AZURE_OPENAI_ENDPOINT"))
+                .serviceVersion(System.getenv("AZURE_OPENAI_SERVICE_VERSION"))
+                .apiKey(System.getenv("AZURE_OPENAI_KEY"))
+                .deploymentName(deploymentName)
+                .tokenizer(new OpenAiTokenizer(gptVersion))
+                .logRequestsAndResponses(true)
+                .build();
 
         model.generate(singletonList(userMessage), singletonList(toolSpecification), new StreamingResponseHandler<AiMessage>() {
 
@@ -124,7 +142,7 @@ class AzureOpenAiStreamingChatModelIT {
         assertThat(toolExecutionRequest.name()).isEqualTo("calculator");
         assertThat(toolExecutionRequest.arguments()).isEqualToIgnoringWhitespace("{\"first\": 2, \"second\": 2}");
 
-        assertThat(response.tokenUsage().inputTokenCount()).isEqualTo(50);
+        assertThat(response.tokenUsage().inputTokenCount()).isEqualTo(53);
         assertThat(response.tokenUsage().outputTokenCount()).isGreaterThan(0);
         assertThat(response.tokenUsage().totalTokenCount())
                 .isEqualTo(response.tokenUsage().inputTokenCount() + response.tokenUsage().outputTokenCount());

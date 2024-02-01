@@ -13,6 +13,7 @@ import dev.langchain4j.model.chat.StreamingChatLanguageModel;
 import dev.langchain4j.model.openai.OpenAiStreamingChatModel;
 import dev.langchain4j.model.output.Response;
 import dev.langchain4j.model.output.TokenUsage;
+import org.assertj.core.data.Percentage;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -28,11 +29,15 @@ import static org.mockito.Mockito.*;
 public class StreamingAiServicesIT {
 
     StreamingChatLanguageModel streamingChatModel = OpenAiStreamingChatModel.builder()
+            .baseUrl(System.getenv("OPENAI_BASE_URL"))
             .apiKey(System.getenv("OPENAI_API_KEY"))
+            .organizationId(System.getenv("OPENAI_ORGANIZATION_ID"))
             .temperature(0.0)
             .logRequests(true)
             .logResponses(true)
             .build();
+
+    Percentage tokenizerPrecision = withPercentage(5);
 
     interface Assistant {
 
@@ -166,8 +171,8 @@ public class StreamingAiServicesIT {
         assertThat(response.content().text()).isEqualTo(answer);
 
         TokenUsage tokenUsage = response.tokenUsage();
-        assertThat(tokenUsage.inputTokenCount()).isEqualTo(181); // TODO should be around 182?
-        assertThat(tokenUsage.outputTokenCount()).isCloseTo(27, withPercentage(5)); // TODO
+        assertThat(tokenUsage.inputTokenCount()).isCloseTo(72 + 110, tokenizerPrecision);
+        assertThat(tokenUsage.outputTokenCount()).isCloseTo(21 + 28, tokenizerPrecision);
         assertThat(tokenUsage.totalTokenCount())
                 .isEqualTo(tokenUsage.inputTokenCount() + tokenUsage.outputTokenCount());
 
@@ -237,8 +242,8 @@ public class StreamingAiServicesIT {
         assertThat(response.content().text()).isEqualTo(answer);
 
         TokenUsage tokenUsage = response.tokenUsage();
-        assertThat(tokenUsage.inputTokenCount()).isEqualTo(351); // TODO should be around 348?
-        assertThat(tokenUsage.outputTokenCount()).isCloseTo(52, withPercentage(5)); // TODO
+        assertThat(tokenUsage.inputTokenCount()).isCloseTo(79 + 117 + 152, tokenizerPrecision);
+        assertThat(tokenUsage.outputTokenCount()).isCloseTo(21 + 20 + 53, tokenizerPrecision);
         assertThat(tokenUsage.totalTokenCount())
                 .isEqualTo(tokenUsage.inputTokenCount() + tokenUsage.outputTokenCount());
 
@@ -294,7 +299,9 @@ public class StreamingAiServicesIT {
         Calculator calculator = spy(new Calculator());
 
         StreamingChatLanguageModel streamingChatModel = OpenAiStreamingChatModel.builder()
+                .baseUrl(System.getenv("OPENAI_BASE_URL"))
                 .apiKey(System.getenv("OPENAI_API_KEY"))
+                .organizationId(System.getenv("OPENAI_ORGANIZATION_ID"))
                 .modelName(GPT_3_5_TURBO_1106)
                 .temperature(0.0)
                 .logRequests(true)
@@ -331,8 +338,8 @@ public class StreamingAiServicesIT {
         assertThat(response.content().text()).isEqualTo(answer);
 
         TokenUsage tokenUsage = response.tokenUsage();
-        assertThat(tokenUsage.inputTokenCount()).isEqualTo(221); // TODO should be around 239?
-        assertThat(tokenUsage.outputTokenCount()).isCloseTo(57, withPercentage(5)); // TODO
+        assertThat(tokenUsage.inputTokenCount()).isCloseTo(79 + 160, tokenizerPrecision);
+        assertThat(tokenUsage.outputTokenCount()).isCloseTo(54 + 58, tokenizerPrecision);
         assertThat(tokenUsage.totalTokenCount())
                 .isEqualTo(tokenUsage.inputTokenCount() + tokenUsage.outputTokenCount());
 

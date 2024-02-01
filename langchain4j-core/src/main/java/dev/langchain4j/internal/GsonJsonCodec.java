@@ -1,52 +1,68 @@
 package dev.langchain4j.internal;
 
-import static java.time.format.DateTimeFormatter.ISO_LOCAL_DATE;
-import static java.time.format.DateTimeFormatter.ISO_LOCAL_DATE_TIME;
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
-import com.google.gson.JsonDeserializer;
-import com.google.gson.JsonPrimitive;
-import com.google.gson.JsonSerializer;
+import com.google.gson.*;
+import com.google.gson.reflect.TypeToken;
 import com.google.gson.stream.JsonWriter;
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStreamWriter;
+
+import java.io.*;
+import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Map;
+
+import static java.time.format.DateTimeFormatter.ISO_LOCAL_DATE;
+import static java.time.format.DateTimeFormatter.ISO_LOCAL_DATE_TIME;
 
 class GsonJsonCodec implements Json.JsonCodec {
+
     private static final Gson GSON = new GsonBuilder()
-            .setPrettyPrinting()
-            .registerTypeAdapter(
-                    LocalDate.class,
-                    (JsonSerializer<LocalDate>) (localDate, type, context) -> new JsonPrimitive(localDate.format(ISO_LOCAL_DATE))
-            )
-            .registerTypeAdapter(
-                    LocalDate.class,
-                    (JsonDeserializer<LocalDate>) (json, type, context) -> LocalDate.parse(json.getAsString(), ISO_LOCAL_DATE)
-            )
-            .registerTypeAdapter(
-                    LocalDateTime.class,
-                    (JsonSerializer<LocalDateTime>) (localDateTime, type, context) ->
-                            new JsonPrimitive(localDateTime.format(ISO_LOCAL_DATE_TIME))
-            )
-            .registerTypeAdapter(
-                    LocalDateTime.class,
-                    (JsonDeserializer<LocalDateTime>) (json, type, context) ->
-                            LocalDateTime.parse(json.getAsString(), ISO_LOCAL_DATE_TIME)
-            )
-            .create();
+        .setPrettyPrinting()
+        .registerTypeAdapter(
+                LocalDate.class,
+                (JsonSerializer<LocalDate>) (localDate, type, context) ->
+                        new JsonPrimitive(localDate.format(ISO_LOCAL_DATE))
+        )
+        .registerTypeAdapter(
+                LocalDate.class,
+                (JsonDeserializer<LocalDate>) (json, type, context) ->
+                        LocalDate.parse(json.getAsString(), ISO_LOCAL_DATE)
+        )
+        .registerTypeAdapter(
+                LocalDateTime.class,
+                (JsonSerializer<LocalDateTime>) (localDateTime, type, context) ->
+                        new JsonPrimitive(localDateTime.format(ISO_LOCAL_DATE_TIME))
+        )
+        .registerTypeAdapter(
+                LocalDateTime.class,
+                (JsonDeserializer<LocalDateTime>) (json, type, context) ->
+                        LocalDateTime.parse(json.getAsString(), ISO_LOCAL_DATE_TIME)
+        )
+        .create();
+
+    public static final Type MAP_TYPE = new TypeToken<Map<String, String>>() {}.getType();
 
     @Override
     public String toJson(Object o) {
         return GSON.toJson(o);
     }
 
+    /**
+     * Reads a JSON string and returns an object of the specified type.
+     *
+     * <p>As a special case, if the type is {@link Map}, the returned object is
+     * parsed as a {@code Map<String, String>}.
+     *
+     * @param json JSON string to be parsed.
+     * @param type Type of the object to be returned.
+     * @return the object represented by the JSON string.
+     * @param <T> Type of the object to be returned.
+     */
     @Override
     public <T> T fromJson(String json, Class<T> type) {
+        if (type == Map.class) {
+            return GSON.fromJson(json, MAP_TYPE);
+        }
         return GSON.fromJson(json, type);
     }
 
@@ -54,7 +70,8 @@ class GsonJsonCodec implements Json.JsonCodec {
     public InputStream toInputStream(Object o, Class<?> type) throws IOException {
         try (
                 ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
-                OutputStreamWriter outputStreamWriter = new OutputStreamWriter(byteArrayOutputStream, StandardCharsets.UTF_8);
+                OutputStreamWriter outputStreamWriter = new OutputStreamWriter(
+                        byteArrayOutputStream, StandardCharsets.UTF_8);
                 JsonWriter jsonWriter = new JsonWriter(outputStreamWriter)
         ) {
             GSON.toJson(o, type, jsonWriter);

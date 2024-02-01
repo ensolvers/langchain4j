@@ -5,10 +5,7 @@ import com.knuddels.jtokkit.api.Encoding;
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.agent.tool.ToolParameters;
 import dev.langchain4j.agent.tool.ToolSpecification;
-import dev.langchain4j.data.message.AiMessage;
-import dev.langchain4j.data.message.ChatMessage;
-import dev.langchain4j.data.message.ToolExecutionResultMessage;
-import dev.langchain4j.data.message.UserMessage;
+import dev.langchain4j.data.message.*;
 import dev.langchain4j.model.Tokenizer;
 
 import java.util.List;
@@ -17,10 +14,17 @@ import java.util.Optional;
 import java.util.function.Supplier;
 
 import static dev.langchain4j.internal.Exceptions.illegalArgument;
+import static dev.langchain4j.internal.Json.fromJson;
+import static dev.langchain4j.internal.Utils.isNullOrBlank;
 import static dev.langchain4j.internal.ValidationUtils.ensureNotBlank;
-import static dev.langchain4j.model.openai.InternalOpenAiHelper.roleFrom;
-import static dev.langchain4j.model.openai.OpenAiModelName.GPT_3_5_TURBO_0301;
+import static dev.langchain4j.model.openai.OpenAiChatModelName.*;
+import static java.util.Collections.singletonList;
 
+/**
+ * This class can be used to estimate the cost (in tokens) before calling OpenAI or when using streaming.
+ * Magic numbers present in this class were found empirically while testing.
+ * There are integration tests in place that are making sure that the calculations here are very close to that of OpenAI.
+ */
 public class OpenAiTokenizer implements Tokenizer {
 
     private final String modelName;
@@ -40,66 +44,106 @@ public class OpenAiTokenizer implements Tokenizer {
                 .countTokensOrdinary(text);
     }
 
-    //Estimate the number of tokens in the parameters of a tool
-    private int estimateTokenCountInToolParameters(ToolParameters parameters) {
-        //Return early if there are no parameters
-        if (parameters == null) return 0;
+    @Override
+    public int estimateTokenCountInMessage(ChatMessage message) {
+        int tokenCount = 1; // 1 token for role
+        tokenCount += extraTokensPerMessage();
 
+        if (message instanceof SystemMessage) {
+            tokenCount += estimateTokenCountIn((SystemMessage) message);
+        } else if (message instanceof UserMessage) {
+            tokenCount += estimateTokenCountIn((UserMessage) message);
+        } else if (message instanceof AiMessage) {
+            tokenCount += estimateTokenCountIn((AiMessage) message);
+        } else if (message instanceof ToolExecutionResultMessage) {
+            tokenCount += estimateTokenCountIn((ToolExecutionResultMessage) message);
+        } else {
+            throw new IllegalArgumentException("Unknown message type: " + message);
+        }
+
+        return tokenCount;
+    }
+
+    private int estimateTokenCountIn(SystemMessage systemMessage) {
+        return estimateTokenCountInText(systemMessage.text());
+    }
+
+    private int estimateTokenCountIn(UserMessage userMessage) {
         int tokenCount = 0;
-        Map<String, Map<String, Object>> properties = parameters.properties();
-        for (String property : properties.keySet()) {
-            for (Map.Entry<String, Object> entry : properties.get(property).entrySet()) {
-                if ("type".equals(entry.getKey())) {
-                    tokenCount += 3; // found experimentally while playing with OpenAI API
-                    tokenCount += estimateTokenCountInText(entry.getValue().toString());
-                } else if ("description".equals(entry.getKey())) {
-                    tokenCount += 3; // found experimentally while playing with OpenAI API
-                    tokenCount += estimateTokenCountInText(entry.getValue().toString());
-                } else if ("enum".equals(entry.getKey())) {
-                    tokenCount -= 3; // found experimentally while playing with OpenAI API
-                    for (Object enumValue : (Object[]) entry.getValue()) {
-                        tokenCount += 3; // found experimentally while playing with OpenAI API
-                        tokenCount += estimateTokenCountInText(enumValue.toString());
+
+        for (Content content : userMessage.contents()) {
+            if (content instanceof TextContent) {
+                tokenCount += estimateTokenCountInText(((TextContent) content).text());
+            } else if (content instanceof ImageContent) {
+                tokenCount += 85; // TODO implement for HIGH/AUTO detail level
+            } else {
+                throw illegalArgument("Unknown content type: " + content);
+            }
+        }
+
+        if (userMessage.name() != null && !modelName.equals(GPT_4_VISION_PREVIEW)) {
+            tokenCount += extraTokensPerName();
+            tokenCount += estimateTokenCountInText(userMessage.name());
+        }
+
+        return tokenCount;
+    }
+
+    private int estimateTokenCountIn(AiMessage aiMessage) {
+        int tokenCount = 0;
+
+        if (aiMessage.text() != null) {
+            tokenCount += estimateTokenCountInText(aiMessage.text());
+        }
+
+        if (aiMessage.toolExecutionRequests() != null) {
+            if (isOneOfLatestModels()) {
+                tokenCount += 6;
+            } else {
+                tokenCount += 3;
+            }
+            if (aiMessage.toolExecutionRequests().size() == 1) {
+                tokenCount -= 1;
+                ToolExecutionRequest toolExecutionRequest = aiMessage.toolExecutionRequests().get(0);
+                tokenCount += estimateTokenCountInText(toolExecutionRequest.name()) * 2;
+                tokenCount += estimateTokenCountInText(toolExecutionRequest.arguments());
+            } else {
+                tokenCount += 15;
+                for (ToolExecutionRequest toolExecutionRequest : aiMessage.toolExecutionRequests()) {
+                    tokenCount += 7;
+                    tokenCount += estimateTokenCountInText(toolExecutionRequest.name());
+
+                    Map<?, ?> arguments = fromJson(toolExecutionRequest.arguments(), Map.class);
+                    for (Map.Entry<?, ?> argument : arguments.entrySet()) {
+                        tokenCount += 2;
+                        tokenCount += estimateTokenCountInText(argument.getKey().toString());
+                        tokenCount += estimateTokenCountInText(argument.getValue().toString());
                     }
                 }
             }
         }
+
         return tokenCount;
     }
 
-    @Override
-    public int estimateTokenCountInMessage(ChatMessage message) {
-        int tokenCount = 0;
-        tokenCount += extraTokensPerMessage();
-        tokenCount += estimateTokenCountInText(message.text());
-        tokenCount += estimateTokenCountInText(roleFrom(message).toString().toLowerCase());
+    private int estimateTokenCountIn(ToolExecutionResultMessage toolExecutionResultMessage) {
+        return estimateTokenCountInText(toolExecutionResultMessage.text());
+    }
 
-        if (message instanceof UserMessage) {
-            UserMessage userMessage = (UserMessage) message;
-            if (userMessage.name() != null) {
-                tokenCount += extraTokensPerName();
-                tokenCount += estimateTokenCountInText(userMessage.name());
-            }
+    private int extraTokensPerMessage() {
+        if (modelName.equals("gpt-3.5-turbo-0301")) {
+            return 4;
+        } else {
+            return 3;
         }
+    }
 
-        if (message instanceof AiMessage) {
-            AiMessage aiMessage = (AiMessage) message;
-            if (aiMessage.hasToolExecutionRequests()) {
-                for (ToolExecutionRequest toolExecutionRequest : aiMessage.toolExecutionRequests()) {
-                    tokenCount += 4; // found experimentally while playing with OpenAI API
-                    tokenCount += estimateTokenCountInText(toolExecutionRequest.name());
-                    tokenCount += estimateTokenCountInText(toolExecutionRequest.arguments());
-                }
-            }
+    private int extraTokensPerName() {
+        if (modelName.equals("gpt-3.5-turbo-0301")) {
+            return -1; // if there's a name, the role is omitted
+        } else {
+            return 1;
         }
-
-        if (message instanceof ToolExecutionResultMessage) {
-            ToolExecutionResultMessage toolExecutionResultMessage = (ToolExecutionResultMessage) message;
-            tokenCount += -1; // found experimentally while playing with OpenAI API
-            tokenCount += estimateTokenCountInText(toolExecutionResultMessage.toolName());
-        }
-
-        return tokenCount;
     }
 
     @Override
@@ -115,36 +159,73 @@ public class OpenAiTokenizer implements Tokenizer {
 
     @Override
     public int estimateTokenCountInToolSpecifications(Iterable<ToolSpecification> toolSpecifications) {
-        int tokenCount = 0;
+        int tokenCount = 16;
         for (ToolSpecification toolSpecification : toolSpecifications) {
+            tokenCount += 6;
             tokenCount += estimateTokenCountInText(toolSpecification.name());
-            tokenCount += estimateTokenCountInText(toolSpecification.description());
+            if (toolSpecification.description() != null) {
+                tokenCount += 2;
+                tokenCount += estimateTokenCountInText(toolSpecification.description());
+            }
             tokenCount += estimateTokenCountInToolParameters(toolSpecification.parameters());
-            tokenCount += 12; // found experimentally while playing with OpenAI API
         }
-        tokenCount += 12; // found experimentally while playing with OpenAI API
+        return tokenCount;
+    }
+
+    private int estimateTokenCountInToolParameters(ToolParameters parameters) {
+        if (parameters == null) {
+            return 0;
+        }
+
+        int tokenCount = 3;
+        Map<String, Map<String, Object>> properties = parameters.properties();
+        if (isOneOfLatestModels()) {
+            tokenCount += properties.size() - 1;
+        }
+        for (String property : properties.keySet()) {
+            if (isOneOfLatestModels()) {
+                tokenCount += 2;
+            } else {
+                tokenCount += 3;
+            }
+            tokenCount += estimateTokenCountInText(property);
+            for (Map.Entry<String, Object> entry : properties.get(property).entrySet()) {
+                if ("type".equals(entry.getKey())) {
+                    if ("array".equals(entry.getValue()) && isOneOfLatestModels()) {
+                        tokenCount += 1;
+                    }
+                    // TODO object
+                } else if ("description".equals(entry.getKey())) {
+                    tokenCount += 2;
+                    tokenCount += estimateTokenCountInText(entry.getValue().toString());
+                    if (isOneOfLatestModels() && parameters.required().contains(property)) {
+                        tokenCount += 1;
+                    }
+                } else if ("enum".equals(entry.getKey())) {
+                    if (isOneOfLatestModels()) {
+                        tokenCount -= 2;
+                    } else {
+                        tokenCount -= 3;
+                    }
+                    for (Object enumValue : (Object[]) entry.getValue()) {
+                        tokenCount += 3;
+                        tokenCount += estimateTokenCountInText(enumValue.toString());
+                    }
+                }
+            }
+        }
         return tokenCount;
     }
 
     @Override
-    public int estimateTokenCountInToolExecutionRequests(Iterable<ToolExecutionRequest> toolExecutionRequests) {
-        return 0; // TODO
-    }
-
-    private int extraTokensPerMessage() {
-        if (modelName.equals(GPT_3_5_TURBO_0301)) {
-            return 4;
-        } else {
-            return 3;
+    public int estimateTokenCountInForcefulToolSpecification(ToolSpecification toolSpecification) {
+        int tokenCount = estimateTokenCountInToolSpecifications(singletonList(toolSpecification));
+        tokenCount += 4;
+        tokenCount += estimateTokenCountInText(toolSpecification.name());
+        if (isOneOfLatestModels()) {
+            tokenCount += 3;
         }
-    }
-
-    private int extraTokensPerName() {
-        if (modelName.equals(GPT_3_5_TURBO_0301)) {
-            return -1; // if there's a name, the role is omitted
-        } else {
-            return 1;
-        }
+        return tokenCount;
     }
 
     public List<Integer> encode(String text) {
@@ -164,5 +245,109 @@ public class OpenAiTokenizer implements Tokenizer {
 
     private Supplier<IllegalArgumentException> unknownModelException() {
         return () -> illegalArgument("Model '%s' is unknown to jtokkit", modelName);
+    }
+
+    @Override
+    public int estimateTokenCountInToolExecutionRequests(Iterable<ToolExecutionRequest> toolExecutionRequests) {
+
+        int tokenCount = 0;
+
+        int toolsCount = 0;
+        int toolsWithArgumentsCount = 0;
+        int toolsWithoutArgumentsCount = 0;
+
+        int totalArgumentsCount = 0;
+
+        for (ToolExecutionRequest toolExecutionRequest : toolExecutionRequests) {
+            tokenCount += 4;
+            tokenCount += estimateTokenCountInText(toolExecutionRequest.name());
+            tokenCount += estimateTokenCountInText(toolExecutionRequest.arguments());
+
+            int argumentCount = countArguments(toolExecutionRequest.arguments());
+            if (argumentCount == 0) {
+                toolsWithoutArgumentsCount++;
+            } else {
+                toolsWithArgumentsCount++;
+            }
+            totalArgumentsCount += argumentCount;
+
+            toolsCount++;
+        }
+
+        if (modelName.equals(GPT_3_5_TURBO_1106.toString()) || isOneOfLatestGpt4Models()) {
+            tokenCount += 16;
+            tokenCount += 3 * toolsWithoutArgumentsCount;
+            tokenCount += toolsCount;
+            if (totalArgumentsCount > 0) {
+                tokenCount -= 1;
+                tokenCount -= 2 * totalArgumentsCount;
+                tokenCount += 2 * toolsWithArgumentsCount;
+                tokenCount += toolsCount;
+            }
+        }
+
+        if (modelName.equals(GPT_4_1106_PREVIEW.toString())) {
+            tokenCount += 3;
+            if (toolsCount > 1) {
+                tokenCount += 18;
+                tokenCount += 15 * toolsCount;
+                tokenCount += totalArgumentsCount;
+                tokenCount -= 3 * toolsWithoutArgumentsCount;
+            }
+        }
+
+        return tokenCount;
+    }
+
+    @Override
+    public int estimateTokenCountInForcefulToolExecutionRequest(ToolExecutionRequest toolExecutionRequest) {
+
+        if (isOneOfLatestGpt4Models()) {
+            int argumentsCount = countArguments(toolExecutionRequest.arguments());
+            if (argumentsCount == 0) {
+                return 1;
+            } else {
+                return estimateTokenCountInText(toolExecutionRequest.arguments());
+            }
+        }
+
+        int tokenCount = estimateTokenCountInToolExecutionRequests(singletonList(toolExecutionRequest));
+        tokenCount -= 4;
+        tokenCount -= estimateTokenCountInText(toolExecutionRequest.name());
+
+        if (modelName.equals(GPT_3_5_TURBO_1106.toString())) {
+            int argumentsCount = countArguments(toolExecutionRequest.arguments());
+            if (argumentsCount == 0) {
+                return 1;
+            }
+            tokenCount -= 19;
+            tokenCount += 2 * argumentsCount;
+        }
+
+        return tokenCount;
+    }
+
+    static int countArguments(String arguments) {
+        if (isNullOrBlank(arguments)) {
+            return 0;
+        }
+        Map<?, ?> argumentsMap = fromJson(arguments, Map.class);
+        return argumentsMap.size();
+    }
+
+    private boolean isOneOfLatestModels() {
+        return isOneOfLatestGpt3Models() || isOneOfLatestGpt4Models();
+    }
+
+    private boolean isOneOfLatestGpt3Models() {
+        // TODO add GPT_3_5_TURBO once it points to GPT_3_5_TURBO_1106
+        return modelName.equals(GPT_3_5_TURBO_1106.toString())
+                || modelName.equals(GPT_3_5_TURBO_0125.toString());
+    }
+
+    private boolean isOneOfLatestGpt4Models() {
+        return modelName.equals(GPT_4_TURBO_PREVIEW.toString())
+                || modelName.equals(GPT_4_1106_PREVIEW.toString())
+                || modelName.equals(GPT_4_0125_PREVIEW.toString());
     }
 }

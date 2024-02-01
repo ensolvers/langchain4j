@@ -11,6 +11,8 @@ import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.model.output.Response;
 import dev.langchain4j.model.output.TokenUsage;
+import dev.langchain4j.model.vertexai.spi.VertexAiEmbeddingModelBuilderFactory;
+import dev.langchain4j.spi.ServiceHelper;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -26,10 +28,25 @@ import static java.util.stream.Collectors.toList;
 /**
  * Represents a Google Vertex AI embedding model, such as textembedding-gecko.
  * See details <a href="https://cloud.google.com/vertex-ai/docs/generative-ai/embeddings/get-text-embeddings">here</a>.
+ * <br>
+ * Please follow these steps before using this model:
+ * <br>
+ * 1. <a href="https://github.com/googleapis/java-aiplatform?tab=readme-ov-file#authentication">Authentication</a>
+ * <br>
+ * When developing locally, you can use one of:
+ * <br>
+ * a) <a href="https://github.com/googleapis/google-cloud-java?tab=readme-ov-file#local-developmenttesting">Google Cloud SDK</a>
+ * <br>
+ * b) <a href="https://github.com/googleapis/google-cloud-java?tab=readme-ov-file#using-a-service-account-recommended">Service account</a>
+ * When using service account, ensure that <code>GOOGLE_APPLICATION_CREDENTIALS</code> environment variable points to your JSON service account key.
+ * <br>
+ * 2. <a href="https://github.com/googleapis/java-aiplatform?tab=readme-ov-file#authorization">Authorization</a>
+ * <br>
+ * 3. <a href="https://github.com/googleapis/java-aiplatform?tab=readme-ov-file#prerequisites">Prerequisites</a>
  */
 public class VertexAiEmbeddingModel implements EmbeddingModel {
 
-    private static final int BATCH_SIZE = 5; // Vertex AI has a limit of up to 5 input texts per request
+    private static final int BATCH_SIZE = 250; // Vertex AI has a limit of up to 250 input texts per request
 
     private final PredictionServiceSettings settings;
     private final EndpointName endpointName;
@@ -126,7 +143,10 @@ public class VertexAiEmbeddingModel implements EmbeddingModel {
     }
 
     public static Builder builder() {
-        return new Builder();
+        return ServiceHelper.loadFactoryService(
+                VertexAiEmbeddingModelBuilderFactory.class,
+                Builder::new
+        );
     }
 
     public static class Builder {

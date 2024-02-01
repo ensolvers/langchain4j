@@ -13,8 +13,17 @@ import static dev.langchain4j.internal.Utils.isNullOrBlank;
 import static java.util.Arrays.stream;
 import static java.util.stream.Collectors.toList;
 
+/**
+ * Utility methods for {@link ToolSpecification}s.
+ */
 public class ToolSpecifications {
+    private ToolSpecifications() {}
 
+    /**
+     * Get the {@link ToolSpecification}s for each {@link Tool} method of the given object.
+     * @param objectWithTools the object.
+     * @return the {@link ToolSpecification}s.
+     */
     public static List<ToolSpecification> toolSpecificationsFrom(Object objectWithTools) {
         return stream(objectWithTools.getClass().getDeclaredMethods())
                 .filter(method -> method.isAnnotationPresent(Tool.class))
@@ -22,6 +31,11 @@ public class ToolSpecifications {
                 .collect(toList());
     }
 
+    /**
+     * Get the {@link ToolSpecification} for the given {@link Tool} method.
+     * @param method the method.
+     * @return the {@link ToolSpecification}.
+     */
     public static ToolSpecification toolSpecificationFrom(Method method) {
         Tool annotation = method.getAnnotation(Tool.class);
 
@@ -42,7 +56,13 @@ public class ToolSpecifications {
         return builder.build();
     }
 
-    private static Iterable<JsonSchemaProperty> toJsonSchemaProperties(Parameter parameter) {
+    /**
+     * Convert a {@link Parameter} to a {@link JsonSchemaProperty}.
+     *
+     * @param parameter the parameter.
+     * @return the {@link JsonSchemaProperty}.
+     */
+    static Iterable<JsonSchemaProperty> toJsonSchemaProperties(Parameter parameter) {
 
         Class<?> type = parameter.getType();
 
@@ -85,8 +105,13 @@ public class ToolSpecifications {
         return removeNulls(OBJECT, description); // TODO provide internals
     }
 
-    private static Iterable<JsonSchemaProperty> removeNulls(JsonSchemaProperty... properties) {
-        return stream(properties)
+    /**
+     * Remove nulls from the given array.
+     * @param items the array
+     * @return an iterable of the non-null items.
+     */
+    static Iterable<JsonSchemaProperty> removeNulls(JsonSchemaProperty... items) {
+        return stream(items)
                 .filter(Objects::nonNull)
                 .collect(toList());
     }

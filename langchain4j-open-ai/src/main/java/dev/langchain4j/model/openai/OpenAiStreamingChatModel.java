@@ -12,14 +12,18 @@ import dev.langchain4j.model.StreamingResponseHandler;
 import dev.langchain4j.model.Tokenizer;
 import dev.langchain4j.model.chat.StreamingChatLanguageModel;
 import dev.langchain4j.model.chat.TokenCountEstimator;
+import dev.langchain4j.model.openai.spi.OpenAiStreamingChatModelBuilderFactory;
 import dev.langchain4j.model.output.Response;
+import dev.langchain4j.spi.ServiceHelper;
 import lombok.Builder;
 
 import java.net.Proxy;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 
 import static dev.langchain4j.internal.Utils.getOrDefault;
+import static dev.langchain4j.internal.Utils.isNullOrEmpty;
 import static dev.langchain4j.model.openai.InternalOpenAiHelper.*;
 import static dev.langchain4j.model.openai.OpenAiModelName.GPT_3_5_TURBO;
 import static java.time.Duration.ofSeconds;
@@ -40,11 +44,16 @@ public class OpenAiStreamingChatModel implements StreamingChatLanguageModel, Tok
     private final Integer maxTokens;
     private final Double presencePenalty;
     private final Double frequencyPenalty;
+    private final Map<String, Integer> logitBias;
+    private final String responseFormat;
+    private final Integer seed;
+    private final String user;
     private final Tokenizer tokenizer;
 
     @Builder
     public OpenAiStreamingChatModel(String baseUrl,
                                     String apiKey,
+                                    String organizationId,
                                     String modelName,
                                     Double temperature,
                                     Double topP,
@@ -52,6 +61,10 @@ public class OpenAiStreamingChatModel implements StreamingChatLanguageModel, Tok
                                     Integer maxTokens,
                                     Double presencePenalty,
                                     Double frequencyPenalty,
+                                    Map<String, Integer> logitBias,
+                                    String responseFormat,
+                                    Integer seed,
+                                    String user,
                                     Duration timeout,
                                     Proxy proxy,
                                     Boolean logRequests,
@@ -63,6 +76,7 @@ public class OpenAiStreamingChatModel implements StreamingChatLanguageModel, Tok
         this.client = OpenAiClient.builder()
                 .baseUrl(getOrDefault(baseUrl, OPENAI_URL))
                 .openAiApiKey(apiKey)
+                .organizationId(organizationId)
                 .callTimeout(timeout)
                 .connectTimeout(timeout)
                 .readTimeout(timeout)
@@ -78,6 +92,10 @@ public class OpenAiStreamingChatModel implements StreamingChatLanguageModel, Tok
         this.maxTokens = maxTokens;
         this.presencePenalty = presencePenalty;
         this.frequencyPenalty = frequencyPenalty;
+        this.logitBias = logitBias;
+        this.responseFormat = responseFormat;
+        this.seed = seed;
+        this.user = user;
         this.tokenizer = getOrDefault(tokenizer, () -> new OpenAiTokenizer(this.modelName));
     }
 
@@ -93,7 +111,7 @@ public class OpenAiStreamingChatModel implements StreamingChatLanguageModel, Tok
 
     @Override
     public void generate(List<ChatMessage> messages, ToolSpecification toolSpecification, StreamingResponseHandler<AiMessage> handler) {
-        generate(messages, singletonList(toolSpecification), toolSpecification, handler);
+        generate(messages, null, toolSpecification, handler);
     }
 
     private void generate(List<ChatMessage> messages,
@@ -110,17 +128,21 @@ public class OpenAiStreamingChatModel implements StreamingChatLanguageModel, Tok
                 .stop(stop)
                 .maxTokens(maxTokens)
                 .presencePenalty(presencePenalty)
-                .frequencyPenalty(frequencyPenalty);
+                .frequencyPenalty(frequencyPenalty)
+                .logitBias(logitBias)
+                .responseFormat(responseFormat)
+                .seed(seed)
+                .user(user);
 
         int inputTokenCount = tokenizer.estimateTokenCountInMessages(messages);
 
-        if (toolSpecifications != null && !toolSpecifications.isEmpty()) {
+        if (toolThatMustBeExecuted != null) {
+            requestBuilder.tools(toTools(singletonList(toolThatMustBeExecuted)));
+            requestBuilder.toolChoice(toolThatMustBeExecuted.name());
+            inputTokenCount += tokenizer.estimateTokenCountInForcefulToolSpecification(toolThatMustBeExecuted);
+        } else if (!isNullOrEmpty(toolSpecifications)) {
             requestBuilder.tools(toTools(toolSpecifications));
             inputTokenCount += tokenizer.estimateTokenCountInToolSpecifications(toolSpecifications);
-        }
-        if (toolThatMustBeExecuted != null) {
-            requestBuilder.toolChoice(toolThatMustBeExecuted.name());
-            inputTokenCount += tokenizer.estimateTokenCountInToolSpecification(toolThatMustBeExecuted);
         }
 
         ChatCompletionRequest request = requestBuilder.build();
@@ -160,5 +182,30 @@ public class OpenAiStreamingChatModel implements StreamingChatLanguageModel, Tok
 
     public static OpenAiStreamingChatModel withApiKey(String apiKey) {
         return builder().apiKey(apiKey).build();
+    }
+
+    public static OpenAiStreamingChatModelBuilder builder() {
+        return ServiceHelper.loadFactoryService(
+                OpenAiStreamingChatModelBuilderFactory.class,
+                OpenAiStreamingChatModelBuilder::new
+        );
+    }
+
+    public static class OpenAiStreamingChatModelBuilder {
+
+        public OpenAiStreamingChatModelBuilder() {
+            // This is public so it can be extended
+            // By default with Lombok it becomes package private
+        }
+
+        public OpenAiStreamingChatModelBuilder modelName(String modelName) {
+            this.modelName = modelName;
+            return this;
+        }
+
+        public OpenAiStreamingChatModelBuilder modelName(OpenAiChatModelName modelName) {
+            this.modelName = modelName.toString();
+            return this;
+        }
     }
 }

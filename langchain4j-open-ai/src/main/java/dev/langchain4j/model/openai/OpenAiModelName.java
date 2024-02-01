@@ -1,5 +1,16 @@
 package dev.langchain4j.model.openai;
 
+/**
+ * This class is deprecated. Use one of the following enums instead:
+ * <pre>
+ * {@link OpenAiChatModelName}
+ * {@link OpenAiEmbeddingModelName}
+ * {@link OpenAiImageModelName}
+ * {@link OpenAiLanguageModelName}
+ * {@link OpenAiModerationModelName}
+ * </pre>
+ */
+@Deprecated
 public class OpenAiModelName {
 
     // Use with OpenAiChatModel and OpenAiStreamingChatModel
@@ -25,12 +36,14 @@ public class OpenAiModelName {
     // Use with OpenAiLanguageModel and OpenAiStreamingLanguageModel
     public static final String GPT_3_5_TURBO_INSTRUCT = "gpt-3.5-turbo-instruct";
 
-
     // Use with OpenAiEmbeddingModel
     public static final String TEXT_EMBEDDING_ADA_002 = "text-embedding-ada-002";
-
 
     // Use with OpenAiModerationModel
     public static final String TEXT_MODERATION_STABLE = "text-moderation-stable";
     public static final String TEXT_MODERATION_LATEST = "text-moderation-latest";
+
+    // Use with OpenAiImageModel
+    public static final String DALL_E_2 = "dall-e-2"; // anyone still needs that? :)
+    public static final String DALL_E_3 = "dall-e-3";
 }
