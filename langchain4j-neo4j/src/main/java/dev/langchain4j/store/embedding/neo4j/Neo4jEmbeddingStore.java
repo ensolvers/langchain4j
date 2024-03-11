@@ -149,6 +149,11 @@ public class Neo4jEmbeddingStore implements EmbeddingStore<TextSegment> {
     }
 
     @Override
+    public String addWithMetaData(String id, Embedding embedding, TextSegment textSegment) {
+        return null;
+    }
+
+    @Override
     public void add(String id, Embedding embedding) {
         addInternal(id, embedding, null);
     }
@@ -192,6 +197,11 @@ public class Neo4jEmbeddingStore implements EmbeddingStore<TextSegment> {
                         params)
                     .list(item -> Neo4jEmbeddingUtils.toEmbeddingMatch(this, item));
         }
+    }
+
+    public List<String> addAllWithIds(List<String> ids, List<Embedding> embeddings) {
+        addAllInternal(ids, embeddings, null);
+        return ids;
     }
 
     /*
