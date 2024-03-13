@@ -57,6 +57,8 @@ public class Neo4jEmbeddingStore implements EmbeddingStore<TextSegment> {
     private final String retrievalQuery;
     private final Set<String> notMetaKeys;
 
+    private final boolean isUniqueId;
+
     /**
      * Creates an instance of Neo4jEmbeddingStore defining a {@link Driver} 
      * starting from uri, user and password
@@ -95,7 +97,8 @@ public class Neo4jEmbeddingStore implements EmbeddingStore<TextSegment> {
             String indexName,
             String databaseName,
             String retrievalQuery,
-            long awaitIndexTimeout) {
+            long awaitIndexTimeout,
+            boolean isUniqueId) {
         
         /* required configs */
         this.driver = ensureNotNull(driver, "driver");
@@ -118,6 +121,7 @@ public class Neo4jEmbeddingStore implements EmbeddingStore<TextSegment> {
         this.sanitizedIdProperty = sanitizeOrThrows(this.idProperty, "idProperty");
         this.sanitizedText = sanitizeOrThrows(this.textProperty, "textProperty");
 
+        this.isUniqueId = isUniqueId;
         /* retrieval query: must necessarily return the following column:
             `metadata`,
             `score`,
@@ -258,6 +262,8 @@ public class Neo4jEmbeddingStore implements EmbeddingStore<TextSegment> {
     }
 
     private void createUniqueConstraint() {
+        if (!this.isUniqueId) return;
+
         try (var session = session()) {
             String query = String.format(
                     "CREATE CONSTRAINT IF NOT EXISTS FOR (n:%s) REQUIRE n.%s IS UNIQUE",
