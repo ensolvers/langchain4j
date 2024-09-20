@@ -1,9 +1,16 @@
 package dev.langchain4j.store.embedding;
 
+import dev.langchain4j.Experimental;
+import dev.langchain4j.data.document.Metadata;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
+import dev.langchain4j.store.embedding.filter.Filter;
 
+import java.util.Collection;
 import java.util.List;
+
+import static dev.langchain4j.internal.ValidationUtils.ensureNotBlank;
+import static java.util.Collections.singletonList;
 
 /**
  * Represents a store for embeddings, also known as a vector database.
@@ -57,6 +64,64 @@ public interface EmbeddingStore<Embedded> {
     List<String> addAll(List<Embedding> embeddings, List<Embedded> embedded);
 
     /**
+     * Removes a single embedding from the store by ID.
+     *
+     * @param id The unique ID of the embedding to be removed.
+     */
+    @Experimental
+    default void remove(String id) {
+        ensureNotBlank(id, "id");
+        this.removeAll(singletonList(id));
+    }
+
+    /**
+     * Removes all embeddings that match the specified IDs from the store.
+     *
+     * @param ids A collection of unique IDs of the embeddings to be removed.
+     */
+    @Experimental
+    default void removeAll(Collection<String> ids) {
+        throw new UnsupportedOperationException("Not supported yet.");
+    }
+
+    /**
+     * Removes all embeddings that match the specified {@link Filter} from the store.
+     *
+     * @param filter The filter to be applied to the {@link Metadata} of the {@link TextSegment} during removal.
+     *               Only embeddings whose {@code TextSegment}'s {@code Metadata}
+     *               match the {@code Filter} will be removed.
+     */
+    @Experimental
+    default void removeAll(Filter filter) {
+        throw new UnsupportedOperationException("Not supported yet.");
+    }
+
+    /**
+     * Removes all embeddings from the store.
+     */
+    @Experimental
+    default void removeAll() {
+        throw new UnsupportedOperationException("Not supported yet.");
+    }
+
+    /**
+     * Searches for the most similar (closest in the embedding space) {@link Embedding}s.
+     * <br>
+     * All search criteria are defined inside the {@link EmbeddingSearchRequest}.
+     * <br>
+     * {@link EmbeddingSearchRequest#filter()} can be used to filter by user/memory ID.
+     * Please note that not all {@link EmbeddingStore} implementations support {@link Filter}ing.
+     *
+     * @param request A request to search in an {@link EmbeddingStore}. Contains all search criteria.
+     * @return An {@link EmbeddingSearchResult} containing all found {@link Embedding}s.
+     */
+    default EmbeddingSearchResult<Embedded> search(EmbeddingSearchRequest request) {
+        List<EmbeddingMatch<Embedded>> matches =
+                findRelevant(request.queryEmbedding(), request.maxResults(), request.minScore());
+        return new EmbeddingSearchResult<>(matches);
+    }
+
+    /**
      * Finds the most relevant (closest in space) embeddings to the provided reference embedding.
      * By default, minScore is set to 0, which means that the results may include embeddings with low relevance.
      *
@@ -65,7 +130,9 @@ public interface EmbeddingStore<Embedded> {
      * @return A list of embedding matches.
      * Each embedding match includes a relevance score (derivative of cosine distance),
      * ranging from 0 (not relevant) to 1 (highly relevant).
+     * @deprecated as of 0.31.0, use {@link #search(EmbeddingSearchRequest)} instead.
      */
+    @Deprecated
     default List<EmbeddingMatch<Embedded>> findRelevant(Embedding referenceEmbedding, int maxResults) {
         return findRelevant(referenceEmbedding, maxResults, 0);
     }
@@ -80,8 +147,18 @@ public interface EmbeddingStore<Embedded> {
      * @return A list of embedding matches.
      * Each embedding match includes a relevance score (derivative of cosine distance),
      * ranging from 0 (not relevant) to 1 (highly relevant).
+     * @deprecated as of 0.31.0, use {@link #search(EmbeddingSearchRequest)} instead.
      */
-    List<EmbeddingMatch<Embedded>> findRelevant(Embedding referenceEmbedding, int maxResults, double minScore);
+    @Deprecated
+    default List<EmbeddingMatch<Embedded>> findRelevant(Embedding referenceEmbedding, int maxResults, double minScore) {
+        EmbeddingSearchRequest embeddingSearchRequest = EmbeddingSearchRequest.builder()
+                .queryEmbedding(referenceEmbedding)
+                .maxResults(maxResults)
+                .minScore(minScore)
+                .build();
+        EmbeddingSearchResult<Embedded> embeddingSearchResult = search(embeddingSearchRequest);
+        return embeddingSearchResult.matches();
+    }
 
     /**
      * Finds the most relevant (closest in space) embeddings to the provided reference embedding.
@@ -93,7 +170,9 @@ public interface EmbeddingStore<Embedded> {
      * @return A list of embedding matches.
      * Each embedding match includes a relevance score (derivative of cosine distance),
      * ranging from 0 (not relevant) to 1 (highly relevant).
+     * @deprecated as of 0.31.0, use {@link #search(EmbeddingSearchRequest)} instead.
      */
+    @Deprecated
     default List<EmbeddingMatch<Embedded>> findRelevant(
             Object memoryId, Embedding referenceEmbedding, int maxResults) {
         return findRelevant(memoryId, referenceEmbedding, maxResults, 0);
@@ -110,10 +189,11 @@ public interface EmbeddingStore<Embedded> {
      * @return A list of embedding matches.
      * Each embedding match includes a relevance score (derivative of cosine distance),
      * ranging from 0 (not relevant) to 1 (highly relevant).
+     * @deprecated as of 0.31.0, use {@link #search(EmbeddingSearchRequest)} instead.
      */
+    @Deprecated
     default List<EmbeddingMatch<Embedded>> findRelevant(
             Object memoryId, Embedding referenceEmbedding, int maxResults, double minScore) {
         throw new RuntimeException("Not implemented");
     }
-
 }

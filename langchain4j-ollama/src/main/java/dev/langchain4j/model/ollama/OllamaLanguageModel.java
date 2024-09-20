@@ -4,15 +4,16 @@ import dev.langchain4j.model.language.LanguageModel;
 import dev.langchain4j.model.ollama.spi.OllamaLanguageModelBuilderFactory;
 import dev.langchain4j.model.output.Response;
 import dev.langchain4j.model.output.TokenUsage;
-import dev.langchain4j.spi.ServiceHelper;
 import lombok.Builder;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 
 import static dev.langchain4j.internal.RetryUtils.withRetry;
 import static dev.langchain4j.internal.Utils.getOrDefault;
 import static dev.langchain4j.internal.ValidationUtils.ensureNotBlank;
+import static dev.langchain4j.spi.ServiceHelper.loadFactories;
 import static java.time.Duration.ofSeconds;
 
 /**
@@ -37,13 +38,21 @@ public class OllamaLanguageModel implements LanguageModel {
                                Double repeatPenalty,
                                Integer seed,
                                Integer numPredict,
+                               Integer numCtx,
                                List<String> stop,
                                String format,
                                Duration timeout,
-                               Integer maxRetries) {
+                               Integer maxRetries,
+                               Boolean logRequests,
+                               Boolean logResponses,
+                               Map<String, String> customHeaders
+                               ) {
         this.client = OllamaClient.builder()
                 .baseUrl(baseUrl)
                 .timeout(getOrDefault(timeout, ofSeconds(60)))
+                .logRequests(logRequests)
+                .logResponses(logResponses)
+                .customHeaders(customHeaders)
                 .build();
         this.modelName = ensureNotBlank(modelName, "modelName");
         this.options = Options.builder()
@@ -53,6 +62,7 @@ public class OllamaLanguageModel implements LanguageModel {
                 .repeatPenalty(repeatPenalty)
                 .seed(seed)
                 .numPredict(numPredict)
+                .numCtx(numCtx)
                 .stop(stop)
                 .build();
         this.format = format;
@@ -79,10 +89,10 @@ public class OllamaLanguageModel implements LanguageModel {
     }
 
     public static OllamaLanguageModelBuilder builder() {
-        return ServiceHelper.loadFactoryService(
-                OllamaLanguageModelBuilderFactory.class,
-                OllamaLanguageModelBuilder::new
-        );
+        for (OllamaLanguageModelBuilderFactory factory : loadFactories(OllamaLanguageModelBuilderFactory.class)) {
+            return factory.get();
+        }
+        return new OllamaLanguageModelBuilder();
     }
 
     public static class OllamaLanguageModelBuilder {

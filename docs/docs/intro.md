@@ -5,81 +5,129 @@ title: Introduction
 
 # Introduction
 
-Welcome to the **LangChain4j** documentation website!
+Welcome!
 
-[![](https://img.shields.io/twitter/follow/langchain4j)](https://twitter.com/intent/follow?screen_name=langchain4j)
-[![](https://dcbadge.vercel.app/api/server/JzTFvyjG6R?compact=true&style=flat)](https://discord.gg/JzTFvyjG6R)
+The goal of LangChain4j is to simplify integrating LLMs into Java applications.
 
-LangChain4j simplifies the **integration of AI/LLM capabilities into your Java application**. 
-It is based on the popular Python library LangChain.
+Here's how:
+1. **Unified APIs:**
+   LLM providers (like OpenAI or Google Vertex AI) and embedding (vector) stores (such as Pinecone or Milvus)
+   use proprietary APIs. LangChain4j offers a unified API to avoid the need for learning and implementing specific APIs for each of them.
+   To experiment with different LLMs or embedding stores, you can easily switch between them without the need to rewrite your code.
+   LangChain4j currently supports [15+ popular LLM providers](/integrations/language-models/)
+   and [15+ embedding stores](/integrations/embedding-stores/).
+2. **Comprehensive Toolbox:**
+   Over the past year, the community has been building numerous LLM-powered applications,
+   identifying common abstractions, patterns, and techniques. LangChain4j has refined these into a ready to use package.
+   Our toolbox includes tools ranging from low-level prompt templating, chat memory management, and output parsing
+   to high-level patterns like AI Services and RAG.
+   For each abstraction, we provide an interface along with multiple ready-to-use implementations based on common techniques.
+   Whether you're building a chatbot or developing a RAG with a complete pipeline from data ingestion to retrieval,
+   LangChain4j offers a wide variety of options.
+3. **Numerous Examples:**
+   These [examples](https://github.com/langchain4j/langchain4j-examples) showcase how to begin creating various LLM-powered applications,
+   providing inspiration and enabling you to start building quickly.
 
-### Supercharge your Java application with the power of LLMs
+LangChain4j began development in early 2023 amid the ChatGPT hype.
+We noticed a lack of Java counterparts to the numerous Python and JavaScript LLM libraries and frameworks,
+and we had to fix that!
+Although "LangChain" is in our name, the project is a fusion of ideas and concepts from LangChain, Haystack,
+LlamaIndex, and the broader community, spiced up with a touch of our own innovation.
 
-[![](/img/langchain4j-components.png)](/docs/intro)
+We actively monitor community developments, aiming to quickly incorporate new techniques and integrations,
+ensuring you stay up-to-date.
+The library is under active development. While some features are still being worked on,
+the core functionality is in place, allowing you to start building LLM-powered apps now!
 
-LangChain4j allows for easy interaction with AI/LLMs thanks to:
-
-- **A simple and coherent layer of abstractions**, designed to ensure that your code does not depend on concrete
-  implementations such as LLM providers, embedding store providers, etc. This allows for easy swapping of components.
-- **Numerous implementations of the above-mentioned abstractions**, providing you with a variety of LLMs and embedding
-  stores to choose from.
-- **Range of in-demand features on top of LLMs, such as:**
-    - The capability to **ingest your own data** (documentation, codebase, etc.), allowing the LLM to act and respond
-      based on your data.
-    - **Autonomous agents** for delegating tasks (defined on the fly) to the LLM, which will strive to complete them.
-    - **Prompt templates** to help you achieve the highest possible quality of LLM responses.
-    - **Memory** to provide context to the LLM for your current and past conversations.
-    - **Structured outputs** for receiving responses from the LLM with a desired structure as Java POJOs.
-    - **"AI Services"** for declaratively defining complex AI behavior behind a simple API.
-    - **Chains** to reduce the need for extensive boilerplate code in common use-cases.
-    - **Auto-moderation** to ensure that all inputs and outputs to/from the LLM are not harmful.
-
-### Tutorials (User Guide)
-Discover inspiring [use cases](/docs/tutorials#need-inspiration) or follow our step-by-step introduction to LangChain4j features under [Tutorials](/docs/category/tutorials).
-
-You will get a tour of all LangChain4j functionality in steps of increasing complexity. All steps are demonstrated with complete code examples and code explanation.
-
-### Integrations and Models
-LangChain4j offers ready-to-use integrations with models of OpenAI, HuggingFace, Google, Azure, and many more. 
-It has document loaders for all common document types, and integrations with plenty of embedding models and embedding stores, to facilitate retrieval-augmented generation and AI-powered classification.
-All integrations are listed [here](/docs/category/integrations).
-
-### Code examples
-
-You can browse through code examples in the `langchain4j-examples` repo:
-
-- [Examples in plain Java](https://github.com/langchain4j/langchain4j-examples/tree/main/other-examples/src/main/java)
-- [Example with Spring Boot](https://github.com/langchain4j/langchain4j-examples/blob/main/spring-boot-example/src/test/java/dev/example/CustomerSupportApplicationTest.java)
-
-Quarkus specific examples (leveraging the [quarkus-langchain4j](https://github.com/quarkiverse/quarkus-langchain4j)
-dependency which builds on this project) can be
-found [here](https://github.com/quarkiverse/quarkus-langchain4j/tree/main/samples)
+For easier integration, LangChain4j also includes integration with
+[Quarkus](/tutorials/quarkus-integration) and [Spring Boot](/tutorials/spring-boot-integration).
 
 
-### Disclaimer
+## LangChain4j Features
+- Integration with [15+ LLM providers](/integrations/language-models)
+- Integration with [15+ embedding (vector) stores](/integrations/embedding-stores)
+- Integration with [10+ embedding models](/category/embedding-models)
+- Integration with [4 cloud and local image generation models](/category/image-models)
+- Integration with [2 scoring (re-ranking) models](/category/scoring-reranking-models)
+- Integration with one moderation model: OpenAI
+- Support for texts and images as inputs (multimodality)
+- [AI Services](/tutorials/ai-services) (high-level LLM API)
+- Prompt templates
+- Implementation of persistent and in-memory [chat memory](/tutorials/chat-memory) algorithms: message window and token window
+- [Streaming of responses from LLMs](/tutorials/response-streaming)
+- Output parsers for common Java types and custom POJOs
+- [Tools (function calling)](/tutorials/tools)
+- Dynamic Tools (execution of dynamically generated LLM code)
+- [RAG (Retrieval-Augmented-Generation)](/tutorials/rag):
+  - Ingestion:
+    - Importing various types of documents (TXT, PDFs, DOC, PPT, XLS etc.) from multiple sources (file system, URL, GitHub, Azure Blob Storage, Amazon S3, etc.)
+    - Splitting documents into smaller segments using multiple splitting algorithms
+    - Post-processing of documents and segments
+    - Embedding segments using embedding models
+    - Storing embeddings in embedding (vector) store
+  - Retrieval (simple and advanced):
+    - Transformation of queries (expansion, compression)
+    - Routing of queries
+    - Retrieving from vector store and/or any custom sources
+    - Re-ranking
+    - Reciprocal Rank Fusion
+    - Customization of each step in the RAG flow
+- Text classification
+- Tools for tokenization and estimation of token counts
 
-Please note that the library is in active development and:
+## 2 levels of abstraction
+LangChain4j operates on two levels of abstraction:
+- [Low level](/tutorials/chat-and-language-models). At this level, you have the most freedom and access to all the low-level components such as
+`ChatLanguageModel`, `UserMessage`, `AiMessage`, `EmbeddingStore`, `Embedding`, etc.
+These are the "primitives" of your LLM-powered application.
+You have complete control over how to combine them, but you will need to write more glue code.
+- [High level](/tutorials/ai-services). At this level, you interact with LLMs using high-level APIs like `AiServices`,
+which hides all the complexity and boilerplate from you.
+You still have the flexibility to adjust and fine-tune the behavior, but it is done in a declarative manner.
 
-- Many features are still missing. We are working hard on implementing them ASAP.
-- API might change at any moment. At this point, we prioritize good design in the future over backward compatibility
-  now. We hope for your understanding.
-- We need your input! Please [let us know](https://github.com/langchain4j/langchain4j/issues/new/choose) what features
-  you need and your concerns about the current implementation.
+[![](/img/langchain4j-components.png)](/intro)
 
-### Coming soon:
 
-- Extending "AI Service" features
-- Integration with more LLM providers (commercial and free)
-- Integrations with more embedding stores (commercial and free)
-- Support for more document types
-- Long-term memory for chatbots and agents
-- Chain-of-Thought and Tree-of-Thought
+## LangChain4j Library Structure
+LangChain4j features a modular design, comprising:
+- The `langchain4j-core` module, which defines core abstractions (such as `ChatLanguageModel` and `EmbeddingStore`) and their APIs.
+- The main `langchain4j` module, containing useful tools like `ChatMemory`, `OutputParser` as well as a high-level features like `AiServices`.
+- A wide array of `langchain4j-{integration}` modules, each providing integration with various LLM providers and embedding stores into LangChain4j.
+  You can use the `langchain4j-{integration}` modules independently. For additional features, simply import the main `langchain4j` dependency.
 
-### Request features
 
-Please [let us know](https://github.com/langchain4j/langchain4j/issues/new/choose) what features you need!
+## LangChain4j Repositories
+- [Main repository](https://github.com/langchain4j/langchain4j)
+- [Quarkus extension](https://github.com/quarkiverse/quarkus-langchain4j)
+- [Spring Boot integration](https://github.com/langchain4j/langchain4j-spring)
+- [Examples](https://github.com/langchain4j/langchain4j-examples)
+- [Community resources](https://github.com/langchain4j/langchain4j-community-resources)
+- [In-process embeddings](https://github.com/langchain4j/langchain4j-embeddings)
 
-### Contribute
 
-Please help us make this open-source library better by contributing to our [github repo](https://github.com/langchain4j/langchain4j).
+## Use Cases
+You might ask why would I need all of this?
+Here are some examples:
 
+- You want to implement a custom AI-powered chatbot that has access to your data and behaves the way you want it:
+  - Customer support chatbot that can:
+    - politely answer customer questions
+    - take /change/cancel orders
+  - Educational assistant that can:
+    - Teach various subjects
+    - Explain unclear parts
+    - Assess user's understanding/knowledge
+- You want to process a lot of unstructured data (files, web pages, etc) and extract structured information from them.
+  For example:
+  - extract insights from customer reviews and support chat history
+  - extract interesting information from the websites of your competitors
+  - extract insights from CVs of job applicants
+- You want to generate information, for example:
+  - Emails tailored for each of your customers
+  - Content for your app/website:
+    - Blog posts
+    - Stories
+- You want to transform information, for example:
+  - Summarize
+  - Proofread and rewrite
+  - Translate

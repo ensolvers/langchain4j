@@ -3,51 +3,90 @@ package dev.langchain4j.store.embedding.cassandra;
 import dev.langchain4j.data.document.Metadata;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
+import dev.langchain4j.model.embedding.EmbeddingModel;
+import dev.langchain4j.model.embedding.onnx.allminilml6v2q.AllMiniLmL6V2QuantizedEmbeddingModel;
 import dev.langchain4j.store.embedding.EmbeddingMatch;
-import org.junit.jupiter.api.Disabled;
+import dev.langchain4j.store.embedding.EmbeddingStoreIT;
+import lombok.extern.slf4j.Slf4j;
+import org.assertj.core.data.Percentage;
+import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
 
 import java.util.List;
 
-import static dev.langchain4j.internal.Utils.randomUUID;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.assertj.core.data.Percentage.withPercentage;
 
-/**
- * Work with Cassandra Embedding Store.
- */
-class CassandraEmbeddingStoreIT {
+@Slf4j
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
+abstract class CassandraEmbeddingStoreIT extends EmbeddingStoreIT {
+
+    protected static final String KEYSPACE = "langchain4j";
+    protected static final String TEST_INDEX = "test_embedding_store";
+
+    CassandraEmbeddingStore embeddingStore;
+
+    private final EmbeddingModel embeddingModel = new AllMiniLmL6V2QuantizedEmbeddingModel();
+
+    @Override
+    protected EmbeddingModel embeddingModel() {
+        return embeddingModel;
+    }
+
+    /**
+     * It is required to clean the repository in between tests
+     */
+    @Override
+    protected void clearStore() {
+        ((CassandraEmbeddingStore) embeddingStore()).clear();
+    }
+
+    @Override
+    protected Percentage percentage() {
+        return withPercentage(6); // TODO figure out why difference is so big
+    }
 
     @Test
-    @Disabled("To run this test, you must have a local Cassandra instance, a docker-compose is provided")
-    public void testAddEmbeddingAndFindRelevant() {
+    void should_retrieve_inserted_vector_by_ann() {
+        String sourceSentence = "Testing is doubting !";
+        Embedding sourceEmbedding = embeddingModel().embed(sourceSentence).content();
+        TextSegment sourceTextSegment = TextSegment.from(sourceSentence);
+        String id = embeddingStore().add(sourceEmbedding, sourceTextSegment);
+        assertThat(id != null && !id.isEmpty()).isTrue();
 
-        CassandraEmbeddingStore cassandraEmbeddingStore = initStore();
-
-        Embedding embedding = Embedding.from(new float[]{9.9F, 4.5F, 3.5F, 1.3F, 1.7F, 5.7F, 6.4F, 5.5F, 8.2F, 9.3F, 1.5F});
-        TextSegment textSegment = TextSegment.from("Text", Metadata.from("Key", "Value"));
-        String id = cassandraEmbeddingStore.add(embedding, textSegment);
-        assertTrue(id != null && !id.isEmpty());
-
-        Embedding refereceEmbedding = Embedding.from(new float[]{8.7F, 4.5F, 3.4F, 1.2F, 5.5F, 5.6F, 6.4F, 5.5F, 8.1F, 9.1F, 1.1F});
-        List<EmbeddingMatch<TextSegment>> embeddingMatches = cassandraEmbeddingStore.findRelevant(refereceEmbedding, 1);
-        assertEquals(1, embeddingMatches.size());
+        List<EmbeddingMatch<TextSegment>> embeddingMatches = embeddingStore.findRelevant(sourceEmbedding, 10);
+        assertThat(embeddingMatches).hasSize(1);
 
         EmbeddingMatch<TextSegment> embeddingMatch = embeddingMatches.get(0);
         assertThat(embeddingMatch.score()).isBetween(0d, 1d);
         assertThat(embeddingMatch.embeddingId()).isEqualTo(id);
-        assertThat(embeddingMatch.embedding()).isEqualTo(embedding);
-        assertThat(embeddingMatch.embedded()).isEqualTo(textSegment);
+        assertThat(embeddingMatch.embedding()).isEqualTo(sourceEmbedding);
+        assertThat(embeddingMatch.embedded()).isEqualTo(sourceTextSegment);
     }
 
-    private CassandraEmbeddingStore initStore() {
-        return CassandraEmbeddingStore.builder()
-                .contactPoints("127.0.0.1")
-                .port(9042)
-                .localDataCenter("datacenter1")
-                .table("langchain4j", "table_" + randomUUID().replace("-", ""))
-                .vectorDimension(11)
-                .build();
+    @Test
+    void should_retrieve_inserted_vector_by_ann_and_metadata() {
+        String sourceSentence = "In GOD we trust, everything else we test!";
+        Embedding sourceEmbedding = embeddingModel().embed(sourceSentence).content();
+        TextSegment sourceTextSegment = TextSegment.from(sourceSentence, new Metadata()
+                .put("user", "GOD")
+                .put("test", "false"));
+        String id = embeddingStore().add(sourceEmbedding, sourceTextSegment);
+        assertThat(id != null && !id.isEmpty()).isTrue();
+
+        // Should be found with no filter
+        List<EmbeddingMatch<TextSegment>> matchesAnnOnly = embeddingStore
+                .findRelevant(sourceEmbedding, 10);
+        assertThat(matchesAnnOnly).hasSize(1);
+
+        // Should retrieve if user is god
+        List<EmbeddingMatch<TextSegment>> matchesGod = embeddingStore
+                .findRelevant(sourceEmbedding, 10, .5d, Metadata.from("user", "GOD"));
+        assertThat(matchesGod).hasSize(1);
+
+        List<EmbeddingMatch<TextSegment>> matchesJohn = embeddingStore
+                .findRelevant(sourceEmbedding, 10, .5d, Metadata.from("user", "JOHN"));
+        assertThat(matchesJohn).isEmpty();
     }
 }

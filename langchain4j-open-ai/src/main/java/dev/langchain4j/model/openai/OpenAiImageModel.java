@@ -3,24 +3,26 @@ package dev.langchain4j.model.openai;
 import dev.ai4j.openai4j.OpenAiClient;
 import dev.ai4j.openai4j.image.GenerateImagesRequest;
 import dev.ai4j.openai4j.image.GenerateImagesResponse;
+import dev.ai4j.openai4j.image.ImageData;
 import dev.langchain4j.data.image.Image;
 import dev.langchain4j.model.image.ImageModel;
 import dev.langchain4j.model.openai.spi.OpenAiImageModelBuilderFactory;
 import dev.langchain4j.model.output.Response;
-import dev.langchain4j.spi.ServiceHelper;
 import lombok.Builder;
-import lombok.NonNull;
 
 import java.net.Proxy;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 import static dev.langchain4j.internal.RetryUtils.withRetry;
 import static dev.langchain4j.internal.Utils.getOrDefault;
+import static dev.langchain4j.model.openai.InternalOpenAiHelper.DEFAULT_USER_AGENT;
 import static dev.langchain4j.model.openai.InternalOpenAiHelper.OPENAI_URL;
 import static dev.langchain4j.model.openai.OpenAiModelName.DALL_E_2;
+import static dev.langchain4j.spi.ServiceHelper.loadFactories;
 import static java.time.Duration.ofSeconds;
 
 /**
@@ -55,7 +57,7 @@ public class OpenAiImageModel implements ImageModel {
     @SuppressWarnings("rawtypes")
     public OpenAiImageModel(
             String baseUrl,
-            @NonNull String apiKey,
+            String apiKey,
             String organizationId,
             String modelName,
             String size,
@@ -69,7 +71,8 @@ public class OpenAiImageModel implements ImageModel {
             Boolean logRequests,
             Boolean logResponses,
             Boolean withPersisting,
-            Path persistTo
+            Path persistTo,
+            Map<String, String> customHeaders
     ) {
         timeout = getOrDefault(timeout, ofSeconds(60));
 
@@ -85,7 +88,9 @@ public class OpenAiImageModel implements ImageModel {
                 .proxy(proxy)
                 .logRequests(getOrDefault(logRequests, false))
                 .logResponses(getOrDefault(logResponses, false))
-                .persistTo(persistTo);
+                .userAgent(DEFAULT_USER_AGENT)
+                .persistTo(persistTo)
+                .customHeaders(customHeaders);
 
         if (withPersisting != null && withPersisting) {
             cBuilder.withPersisting();
@@ -100,6 +105,10 @@ public class OpenAiImageModel implements ImageModel {
         this.style = style;
         this.user = user;
         this.responseFormat = responseFormat;
+    }
+
+    public String modelName() {
+        return modelName;
     }
 
     @Override
@@ -123,10 +132,10 @@ public class OpenAiImageModel implements ImageModel {
     }
 
     public static OpenAiImageModelBuilder builder() {
-        return ServiceHelper.loadFactoryService(
-                OpenAiImageModelBuilderFactory.class,
-                OpenAiImageModelBuilder::new
-        );
+        for (OpenAiImageModelBuilderFactory factory : loadFactories(OpenAiImageModelBuilderFactory.class)) {
+            return factory.get();
+        }
+        return new OpenAiImageModelBuilder();
     }
 
     public static class OpenAiImageModelBuilder {
@@ -159,7 +168,7 @@ public class OpenAiImageModel implements ImageModel {
         return builder().apiKey(apiKey).build();
     }
 
-    private static Image fromImageData(GenerateImagesResponse.ImageData data) {
+    private static Image fromImageData(ImageData data) {
         return Image.builder().url(data.url()).base64Data(data.b64Json()).revisedPrompt(data.revisedPrompt()).build();
     }
 

@@ -9,17 +9,18 @@ import dev.langchain4j.model.moderation.Moderation;
 import dev.langchain4j.model.moderation.ModerationModel;
 import dev.langchain4j.model.openai.spi.OpenAiModerationModelBuilderFactory;
 import dev.langchain4j.model.output.Response;
-import dev.langchain4j.spi.ServiceHelper;
 import lombok.Builder;
 
 import java.net.Proxy;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 
 import static dev.langchain4j.internal.RetryUtils.withRetry;
 import static dev.langchain4j.internal.Utils.getOrDefault;
 import static dev.langchain4j.model.openai.InternalOpenAiHelper.*;
 import static dev.langchain4j.model.openai.OpenAiModelName.TEXT_MODERATION_LATEST;
+import static dev.langchain4j.spi.ServiceHelper.loadFactories;
 import static java.time.Duration.ofSeconds;
 import static java.util.Collections.singletonList;
 import static java.util.stream.Collectors.toList;
@@ -42,7 +43,8 @@ public class OpenAiModerationModel implements ModerationModel {
                                  Integer maxRetries,
                                  Proxy proxy,
                                  Boolean logRequests,
-                                 Boolean logResponses) {
+                                 Boolean logResponses,
+                                 Map<String, String> customHeaders) {
 
         baseUrl = getOrDefault(baseUrl, OPENAI_URL);
         if (OPENAI_DEMO_API_KEY.equals(apiKey)) {
@@ -62,9 +64,15 @@ public class OpenAiModerationModel implements ModerationModel {
                 .proxy(proxy)
                 .logRequests(logRequests)
                 .logResponses(logResponses)
+                .userAgent(DEFAULT_USER_AGENT)
+                .customHeaders(customHeaders)
                 .build();
         this.modelName = getOrDefault(modelName, TEXT_MODERATION_LATEST);
         this.maxRetries = getOrDefault(maxRetries, 3);
+    }
+
+    public String modelName() {
+        return modelName;
     }
 
     @Override
@@ -107,10 +115,10 @@ public class OpenAiModerationModel implements ModerationModel {
     }
 
     public static OpenAiModerationModelBuilder builder() {
-        return ServiceHelper.loadFactoryService(
-                OpenAiModerationModelBuilderFactory.class,
-                OpenAiModerationModelBuilder::new
-        );
+        for (OpenAiModerationModelBuilderFactory factory : loadFactories(OpenAiModerationModelBuilderFactory.class)) {
+            return factory.get();
+        }
+        return new OpenAiModerationModelBuilder();
     }
 
     public static class OpenAiModerationModelBuilder {

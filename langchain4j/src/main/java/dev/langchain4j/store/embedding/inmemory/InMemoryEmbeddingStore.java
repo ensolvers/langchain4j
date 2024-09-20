@@ -1,13 +1,11 @@
 package dev.langchain4j.store.embedding.inmemory;
 
+import dev.langchain4j.data.document.Metadata;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
-import dev.langchain4j.spi.ServiceHelper;
 import dev.langchain4j.spi.store.embedding.inmemory.InMemoryEmbeddingStoreJsonCodecFactory;
-import dev.langchain4j.store.embedding.CosineSimilarity;
-import dev.langchain4j.store.embedding.EmbeddingMatch;
-import dev.langchain4j.store.embedding.EmbeddingStore;
-import dev.langchain4j.store.embedding.RelevanceScore;
+import dev.langchain4j.store.embedding.*;
+import dev.langchain4j.store.embedding.filter.Filter;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -18,10 +16,11 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.IntStream;
 
 import static dev.langchain4j.internal.Utils.randomUUID;
-import static dev.langchain4j.internal.ValidationUtils.ensureNotBlank;
-import static dev.langchain4j.internal.ValidationUtils.ensureNotNull;
+import static dev.langchain4j.internal.ValidationUtils.*;
+import static dev.langchain4j.spi.ServiceHelper.loadFactories;
 import static java.nio.file.StandardOpenOption.CREATE;
 import static java.nio.file.StandardOpenOption.TRUNCATE_EXISTING;
+import static java.util.Arrays.asList;
 import static java.util.Comparator.comparingDouble;
 import static java.util.stream.Collectors.toList;
 
@@ -39,7 +38,15 @@ import static java.util.stream.Collectors.toList;
  */
 public class InMemoryEmbeddingStore<Embedded> implements EmbeddingStore<Embedded> {
 
-    final CopyOnWriteArrayList<Entry<Embedded>> entries = new CopyOnWriteArrayList<>();
+    final CopyOnWriteArrayList<Entry<Embedded>> entries;
+
+    public InMemoryEmbeddingStore() {
+        this.entries = new CopyOnWriteArrayList<>();
+    }
+
+    private InMemoryEmbeddingStore(Collection<Entry<Embedded>> entries) {
+        this.entries = new CopyOnWriteArrayList<>(entries);
+    }
 
     @Override
     public String add(Embedding embedding) {
@@ -102,17 +109,54 @@ public class InMemoryEmbeddingStore<Embedded> implements EmbeddingStore<Embedded
     }
 
     @Override
-    public List<EmbeddingMatch<Embedded>> findRelevant(Embedding referenceEmbedding, int maxResults, double minScore) {
+    public void removeAll(Collection<String> ids) {
+        ensureNotEmpty(ids, "ids");
+
+        entries.removeIf(entry -> ids.contains(entry.id));
+    }
+
+    @Override
+    public void removeAll(Filter filter) {
+        ensureNotNull(filter, "filter");
+
+        entries.removeIf(entry -> {
+            if (entry.embedded instanceof TextSegment) {
+                return filter.test(((TextSegment) entry.embedded).metadata());
+            } else if (entry.embedded == null) {
+                return false;
+            } else {
+                throw new UnsupportedOperationException("Not supported yet.");
+            }
+        });
+    }
+
+    @Override
+    public void removeAll() {
+        entries.clear();
+    }
+
+    @Override
+    public EmbeddingSearchResult<Embedded> search(EmbeddingSearchRequest embeddingSearchRequest) {
 
         Comparator<EmbeddingMatch<Embedded>> comparator = comparingDouble(EmbeddingMatch::score);
         PriorityQueue<EmbeddingMatch<Embedded>> matches = new PriorityQueue<>(comparator);
 
+        Filter filter = embeddingSearchRequest.filter();
+
         for (Entry<Embedded> entry : entries) {
-            double cosineSimilarity = CosineSimilarity.between(entry.embedding, referenceEmbedding);
+
+            if (filter != null && entry.embedded instanceof TextSegment) {
+                Metadata metadata = ((TextSegment) entry.embedded).metadata();
+                if (!filter.test(metadata)) {
+                    continue;
+                }
+            }
+
+            double cosineSimilarity = CosineSimilarity.between(entry.embedding, embeddingSearchRequest.queryEmbedding());
             double score = RelevanceScore.fromCosineSimilarity(cosineSimilarity);
-            if (score >= minScore) {
+            if (score >= embeddingSearchRequest.minScore()) {
                 matches.add(new EmbeddingMatch<>(score, entry.id, entry.embedding, entry.embedded));
-                if (matches.size() > maxResults) {
+                if (matches.size() > embeddingSearchRequest.maxResults()) {
                     matches.poll();
                 }
             }
@@ -121,7 +165,8 @@ public class InMemoryEmbeddingStore<Embedded> implements EmbeddingStore<Embedded
         List<EmbeddingMatch<Embedded>> result = new ArrayList<>(matches);
         result.sort(comparator);
         Collections.reverse(result);
-        return result;
+
+        return new EmbeddingSearchResult<>(result);
     }
 
     public String serializeToJson() {
@@ -158,6 +203,28 @@ public class InMemoryEmbeddingStore<Embedded> implements EmbeddingStore<Embedded
         return fromFile(Paths.get(filePath));
     }
 
+    /**
+     * Merges given {@code InMemoryEmbeddingStore}s into a single {@code InMemoryEmbeddingStore},
+     * copying all entries from each store.
+     */
+    public static <Embedded> InMemoryEmbeddingStore<Embedded> merge(Collection<InMemoryEmbeddingStore<Embedded>> stores) {
+        ensureNotNull(stores, "stores");
+        List<Entry<Embedded>> entries = new ArrayList<>();
+        for (InMemoryEmbeddingStore<Embedded> store : stores) {
+            entries.addAll(store.entries);
+        }
+        return new InMemoryEmbeddingStore<>(entries);
+    }
+
+    /**
+     * Merges given {@code InMemoryEmbeddingStore}s into a single {@code InMemoryEmbeddingStore},
+     * copying all entries from each store.
+     */
+    public static <Embedded> InMemoryEmbeddingStore<Embedded> merge(InMemoryEmbeddingStore<Embedded> first,
+                                                                    InMemoryEmbeddingStore<Embedded> second) {
+        return merge(asList(first, second));
+    }
+
     private static class Entry<Embedded> {
 
         String id;
@@ -191,9 +258,9 @@ public class InMemoryEmbeddingStore<Embedded> implements EmbeddingStore<Embedded
     }
 
     private static InMemoryEmbeddingStoreJsonCodec loadCodec() {
-        return ServiceHelper.loadFactoryService(
-                InMemoryEmbeddingStoreJsonCodecFactory.class,
-                InMemoryEmbeddingStoreJsonCodecFactory::create,
-                GsonInMemoryEmbeddingStoreJsonCodec::new);
+        for (InMemoryEmbeddingStoreJsonCodecFactory factory : loadFactories(InMemoryEmbeddingStoreJsonCodecFactory.class)) {
+            return factory.create();
+        }
+        return new GsonInMemoryEmbeddingStoreJsonCodec();
     }
 }

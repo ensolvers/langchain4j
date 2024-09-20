@@ -48,8 +48,8 @@ public class CompressingQueryTransformer implements QueryTransformer {
                     "Do not prepend a query with anything!"
     );
 
-    private final PromptTemplate promptTemplate;
-    private final ChatLanguageModel chatLanguageModel;
+    protected final PromptTemplate promptTemplate;
+    protected final ChatLanguageModel chatLanguageModel;
 
     public CompressingQueryTransformer(ChatLanguageModel chatLanguageModel) {
         this(chatLanguageModel, DEFAULT_PROMPT_TEMPLATE);
@@ -71,8 +71,11 @@ public class CompressingQueryTransformer implements QueryTransformer {
         }
 
         Prompt prompt = createPrompt(query, format(chatMemory));
-        String compressedQuery = chatLanguageModel.generate(prompt.text());
-        return singletonList(Query.from(compressedQuery));
+        String compressedQueryText = chatLanguageModel.generate(prompt.text());
+        Query compressedQuery = query.metadata() == null
+                ? Query.from(compressedQueryText)
+                : Query.from(compressedQueryText, query.metadata());
+        return singletonList(compressedQuery);
     }
 
     protected String format(List<ChatMessage> chatMemory) {

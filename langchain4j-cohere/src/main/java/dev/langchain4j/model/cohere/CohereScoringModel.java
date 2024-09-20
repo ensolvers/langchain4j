@@ -6,9 +6,11 @@ import dev.langchain4j.model.output.TokenUsage;
 import dev.langchain4j.model.scoring.ScoringModel;
 import lombok.Builder;
 
+import java.net.Proxy;
 import java.time.Duration;
 import java.util.List;
 
+import static dev.langchain4j.internal.RetryUtils.withRetry;
 import static dev.langchain4j.internal.Utils.getOrDefault;
 import static dev.langchain4j.internal.ValidationUtils.ensureNotBlank;
 import static java.time.Duration.ofSeconds;
@@ -25,6 +27,7 @@ public class CohereScoringModel implements ScoringModel {
 
     private final CohereClient client;
     private final String modelName;
+    private final Integer maxRetries;
 
     @Builder
     public CohereScoringModel(
@@ -32,6 +35,8 @@ public class CohereScoringModel implements ScoringModel {
             String apiKey,
             String modelName,
             Duration timeout,
+            Integer maxRetries,
+            Proxy proxy,
             Boolean logRequests,
             Boolean logResponses
     ) {
@@ -39,10 +44,12 @@ public class CohereScoringModel implements ScoringModel {
                 .baseUrl(getOrDefault(baseUrl, DEFAULT_BASE_URL))
                 .apiKey(ensureNotBlank(apiKey, "apiKey"))
                 .timeout(getOrDefault(timeout, ofSeconds(60)))
+                .proxy(proxy)
                 .logRequests(getOrDefault(logRequests, false))
                 .logResponses(getOrDefault(logResponses, false))
                 .build();
         this.modelName = modelName;
+        this.maxRetries = getOrDefault(maxRetries, 3);
     }
 
     public static CohereScoringModel withApiKey(String apiKey) {
@@ -60,7 +67,7 @@ public class CohereScoringModel implements ScoringModel {
                         .collect(toList()))
                 .build();
 
-        RerankResponse response = client.rerank(request);
+        RerankResponse response = withRetry(() -> client.rerank(request), maxRetries);
 
         List<Double> scores = response.getResults().stream()
                 .sorted(comparingInt(Result::getIndex))

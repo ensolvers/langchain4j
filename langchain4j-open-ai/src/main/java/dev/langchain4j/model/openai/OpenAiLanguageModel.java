@@ -9,16 +9,17 @@ import dev.langchain4j.model.language.LanguageModel;
 import dev.langchain4j.model.language.TokenCountEstimator;
 import dev.langchain4j.model.openai.spi.OpenAiLanguageModelBuilderFactory;
 import dev.langchain4j.model.output.Response;
-import dev.langchain4j.spi.ServiceHelper;
 import lombok.Builder;
 
 import java.net.Proxy;
 import java.time.Duration;
+import java.util.Map;
 
 import static dev.langchain4j.internal.RetryUtils.withRetry;
 import static dev.langchain4j.internal.Utils.getOrDefault;
 import static dev.langchain4j.model.openai.InternalOpenAiHelper.*;
 import static dev.langchain4j.model.openai.OpenAiModelName.GPT_3_5_TURBO_INSTRUCT;
+import static dev.langchain4j.spi.ServiceHelper.loadFactories;
 import static java.time.Duration.ofSeconds;
 
 /**
@@ -45,7 +46,8 @@ public class OpenAiLanguageModel implements LanguageModel, TokenCountEstimator {
                                Proxy proxy,
                                Boolean logRequests,
                                Boolean logResponses,
-                               Tokenizer tokenizer) {
+                               Tokenizer tokenizer,
+                               Map<String, String> customHeaders) {
 
         timeout = getOrDefault(timeout, ofSeconds(60));
 
@@ -60,11 +62,17 @@ public class OpenAiLanguageModel implements LanguageModel, TokenCountEstimator {
                 .proxy(proxy)
                 .logRequests(logRequests)
                 .logResponses(logResponses)
+                .userAgent(DEFAULT_USER_AGENT)
+                .customHeaders(customHeaders)
                 .build();
         this.modelName = getOrDefault(modelName, GPT_3_5_TURBO_INSTRUCT);
         this.temperature = getOrDefault(temperature, 0.7);
         this.maxRetries = getOrDefault(maxRetries, 3);
-        this.tokenizer = getOrDefault(tokenizer, () -> new OpenAiTokenizer(this.modelName));
+        this.tokenizer = getOrDefault(tokenizer, OpenAiTokenizer::new);
+    }
+
+    public String modelName() {
+        return modelName;
     }
 
     @Override
@@ -96,10 +104,10 @@ public class OpenAiLanguageModel implements LanguageModel, TokenCountEstimator {
     }
 
     public static OpenAiLanguageModelBuilder builder() {
-        return ServiceHelper.loadFactoryService(
-                OpenAiLanguageModelBuilderFactory.class,
-                OpenAiLanguageModelBuilder::new
-        );
+        for (OpenAiLanguageModelBuilderFactory factory : loadFactories(OpenAiLanguageModelBuilderFactory.class)) {
+            return factory.get();
+        }
+        return new OpenAiLanguageModelBuilder();
     }
 
     public static class OpenAiLanguageModelBuilder {

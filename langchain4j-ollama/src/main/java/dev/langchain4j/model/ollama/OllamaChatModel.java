@@ -1,22 +1,24 @@
 package dev.langchain4j.model.ollama;
 
+import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.model.chat.ChatLanguageModel;
 import dev.langchain4j.model.ollama.spi.OllamaChatModelBuilderFactory;
 import dev.langchain4j.model.output.Response;
 import dev.langchain4j.model.output.TokenUsage;
-import dev.langchain4j.spi.ServiceHelper;
 import lombok.Builder;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 
 import static dev.langchain4j.internal.RetryUtils.withRetry;
 import static dev.langchain4j.internal.Utils.getOrDefault;
 import static dev.langchain4j.internal.ValidationUtils.ensureNotBlank;
 import static dev.langchain4j.internal.ValidationUtils.ensureNotEmpty;
-import static dev.langchain4j.model.ollama.OllamaMessagesUtils.toOllamaMessages;
+import static dev.langchain4j.model.ollama.OllamaMessagesUtils.*;
+import static dev.langchain4j.spi.ServiceHelper.loadFactories;
 import static java.time.Duration.ofSeconds;
 
 /**
@@ -41,13 +43,20 @@ public class OllamaChatModel implements ChatLanguageModel {
                            Double repeatPenalty,
                            Integer seed,
                            Integer numPredict,
+                           Integer numCtx,
                            List<String> stop,
                            String format,
                            Duration timeout,
-                           Integer maxRetries) {
+                           Integer maxRetries,
+                           Map<String, String> customHeaders,
+                           Boolean logRequests,
+                           Boolean logResponses) {
         this.client = OllamaClient.builder()
                 .baseUrl(baseUrl)
                 .timeout(getOrDefault(timeout, ofSeconds(60)))
+                .customHeaders(customHeaders)
+                .logRequests(getOrDefault(logRequests, false))
+                .logResponses(logResponses)
                 .build();
         this.modelName = ensureNotBlank(modelName, "modelName");
         this.options = Options.builder()
@@ -57,6 +66,7 @@ public class OllamaChatModel implements ChatLanguageModel {
                 .repeatPenalty(repeatPenalty)
                 .seed(seed)
                 .numPredict(numPredict)
+                .numCtx(numCtx)
                 .stop(stop)
                 .build();
         this.format = format;
@@ -83,11 +93,34 @@ public class OllamaChatModel implements ChatLanguageModel {
         );
     }
 
-    public static OllamaChatModelBuilder builder() {
-        return ServiceHelper.loadFactoryService(
-                OllamaChatModelBuilderFactory.class,
-                OllamaChatModelBuilder::new
+    @Override
+    public Response<AiMessage> generate(List<ChatMessage> messages, List<ToolSpecification> toolSpecifications) {
+        ensureNotEmpty(messages, "messages");
+
+        ChatRequest request = ChatRequest.builder()
+                .model(modelName)
+                .messages(toOllamaMessages(messages))
+                .options(options)
+                .format(format)
+                .stream(false)
+                .tools(toOllamaTools(toolSpecifications))
+                .build();
+
+        ChatResponse response = withRetry(() -> client.chat(request), maxRetries);
+
+        return Response.from(
+                response.getMessage().getToolCalls() != null ?
+                        AiMessage.from(toToolExecutionRequest(response.getMessage().getToolCalls())) :
+                        AiMessage.from(response.getMessage().getContent()),
+                new TokenUsage(response.getPromptEvalCount(), response.getEvalCount())
         );
+    }
+
+    public static OllamaChatModelBuilder builder() {
+        for (OllamaChatModelBuilderFactory factory : loadFactories(OllamaChatModelBuilderFactory.class)) {
+            return factory.get();
+        }
+        return new OllamaChatModelBuilder();
     }
 
     public static class OllamaChatModelBuilder {
