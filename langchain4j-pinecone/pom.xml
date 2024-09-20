@@ -96,11 +96,11 @@
     <build>
         <plugins>
             <plugin>
-                <groupId>org.honton.chas</groupId>
-                <artifactId>license-maven-plugin</artifactId>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <version>2.5.5</version>
                 <configuration>
-                    <!-- protobuf-java-util has a BSD-3-Clause license -->
-                    <skipCompliance>true</skipCompliance>
+                    <skip>true</skip>
                 </configuration>
             </plugin>
         </plugins>
