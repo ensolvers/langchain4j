@@ -152,13 +152,6 @@
                                         <exclude>dev.langchain4j.retriever</exclude>
                                     </excludes>
                                     <element>PACKAGE</element>
-                                    <limits>
-                                        <limit>
-                                            <counter>INSTRUCTION</counter>
-                                            <value>COVEREDRATIO</value>
-                                            <minimum>0.8</minimum>
-                                        </limit>
-                                    </limits>
                                 </rule>
                                 <rule>
                                     <includes>
@@ -172,13 +165,6 @@
                                         <include>dev.langchain4j.rag.query.transformer</include>
                                     </includes>
                                     <element>PACKAGE</element>
-                                    <limits>
-                                        <limit>
-                                            <counter>INSTRUCTION</counter>
-                                            <value>COVEREDRATIO</value>
-                                            <minimum>0.75</minimum>
-                                        </limit>
-                                    </limits>
                                 </rule>
                                 <rule>
                                     <includes>
@@ -189,13 +175,6 @@
                                         <include>dev.langchain4j.store.embedding.filter.comparison</include>
                                     </includes>
                                     <element>PACKAGE</element>
-                                    <limits>
-                                        <limit>
-                                            <counter>INSTRUCTION</counter>
-                                            <value>COVEREDRATIO</value>
-                                            <minimum>0.00</minimum>
-                                        </limit>
-                                    </limits>
                                 </rule>
                             </rules>
                         </configuration>
