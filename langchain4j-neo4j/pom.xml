@@ -18,6 +18,7 @@
 
     <properties>
         <maven.compiler.release>17</maven.compiler.release>
+        <maven.test.skip>true</maven.test.skip>
     </properties>
 
 

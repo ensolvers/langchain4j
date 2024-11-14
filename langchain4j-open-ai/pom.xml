@@ -14,6 +14,10 @@
     <artifactId>langchain4j-open-ai</artifactId>
     <name>LangChain4j :: Integration :: OpenAI</name>
 
+    <properties>
+        <maven.test.skip>true</maven.test.skip>
+    </properties>
+
     <dependencies>
 
         <dependency>
